@@ -334,8 +334,8 @@ const EmployeeForm = ({ onLogout }) => {
       setIsRegistered(true);
       setName(employee.name || '');
       
-      // Check if employee is checked in
-      const timestamp = await dbService.getLatestTimestamp(pnr);
+      // Check if employee is checked in - använd getLatestTimestampByPersonnummer istället
+      const timestamp = await dbService.getLatestTimestampByPersonnummer(pnr);
       
       if (!isMountedRef.current) return;
       
@@ -404,8 +404,8 @@ const EmployeeForm = ({ onLogout }) => {
         return;
       }
       
-      // Check if employee is already checked in
-      const timestamp = await dbService.getLatestTimestamp(pnr);
+      // Check if employee is already checked in - använd getLatestTimestampByPersonnummer istället
+      const timestamp = await dbService.getLatestTimestampByPersonnummer(pnr);
       let extraData = null;
       
       if (!isMountedRef.current) return;
@@ -854,7 +854,7 @@ const EmployeeForm = ({ onLogout }) => {
                   className="w-full px-4 py-3 border rounded-md text-lg"
                   disabled={loading}
                   inputMode="numeric"
-                  pattern="[0-9-]*"
+                  pattern="[0-9\-]*"
                   autoFocus
                 />
                 <button 
