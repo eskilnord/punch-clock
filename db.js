@@ -254,17 +254,26 @@ const dbService = {
         
         const store = transaction.objectStore('timestamps');
         
-        const request = store.add(fullTimestamp); // Use add instead of put since id is auto-increment
+        let request;
+        
+        // Om vi har ett ID och försöker uppdatera (stämpla ut)
+        if (fullTimestamp.id) {
+          console.log(`Updating existing timestamp with ID: ${fullTimestamp.id}`);
+          request = store.put(fullTimestamp); // Använd put för uppdateringar
+        } else {
+          console.log("Creating new timestamp record");
+          request = store.add(fullTimestamp); // Använd add för nya tidsstämplingar
+        }
         
         request.onsuccess = event => {
           const id = event.target.result;
           console.log(`Timestamp saved with ID: ${id}`, fullTimestamp);
           
           // Add the ID to the saved timestamp object
-          const savedTimestamp = { ...fullTimestamp, id };
+          const savedTimestamp = { ...fullTimestamp, id: id || fullTimestamp.id };
           
           // Double check the save by reading it back
-          const verifyRequest = store.get(id);
+          const verifyRequest = store.get(savedTimestamp.id);
           verifyRequest.onsuccess = () => {
             console.log("Verified saved timestamp:", verifyRequest.result);
             resolve(savedTimestamp);

@@ -495,6 +495,17 @@ const EmployeeForm = ({ onLogout }) => {
         notes: '',
         quickSelect: ''
       });
+      
+      // Starta en timer för att återställa formuläret efter 3 sekunder
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setSuccess('');
+          setIsRegistered(false);
+          setIsCheckedIn(false);
+          setStatusMessage('');
+        }
+      }, 3000);
+      
     } catch (err) {
       console.error(err);
       if (isMountedRef.current) {
@@ -833,7 +844,7 @@ const EmployeeForm = ({ onLogout }) => {
     );
   }
   
-  // Standardvyn med stämpelklocka och närvarolista
+  // Uppdatera standard-vyn med mer direkt feedback
   return (
     <div className="max-w-6xl mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -866,80 +877,105 @@ const EmployeeForm = ({ onLogout }) => {
             </div>
           )}
           
-          {/* Input form */}
-          <form onSubmit={handleCheckInOut}>
-            <div className="mb-4">
-              <label htmlFor="personnummer" className="block text-gray-700 mb-1">Personnummer</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  id="personnummer"
-                  placeholder="ÅÅÅÅMMDD-XXXX"
-                  value={personnummer}
-                  onChange={(e) => setPersonnummer(e.target.value)}
-                  className="w-full px-4 py-3 border rounded-md text-lg"
-                  disabled={loading}
-                  inputMode="numeric"
-                  pattern="[0-9\-]*"
-                  autoFocus
-                />
-                <button 
-                  onClick={toggleNumpad}
-                  className="absolute right-2 top-3 bg-gray-200 p-1 rounded-full hover:bg-gray-300"
-                  type="button"
-                >
-                  {showNumpad ? (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                    </svg>
-                  )}
-                </button>
+          {/* Visa status om användaren är instämplad */}
+          {isRegistered && isCheckedIn && statusMessage && (
+            <div className="mb-4 p-4 bg-blue-100 text-blue-700 rounded text-center">
+              <p className="text-lg font-semibold">{statusMessage}</p>
+              <p className="text-sm mt-1">Stämpla ut nedan när arbetspasset är slut</p>
+            </div>
+          )}
+          
+          {/* Input form - om det finns ett success-meddelande och användaren just stämplat,
+              dölj formuläret tillfälligt */}
+          {!success ? (
+            <form onSubmit={handleCheckInOut}>
+              <div className="mb-4">
+                <label htmlFor="personnummer" className="block text-gray-700 mb-1">Personnummer</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    id="personnummer"
+                    placeholder="ÅÅÅÅMMDD-XXXX"
+                    value={personnummer}
+                    onChange={(e) => setPersonnummer(e.target.value)}
+                    className="w-full px-4 py-3 border rounded-md text-lg"
+                    disabled={loading}
+                    inputMode="numeric"
+                    pattern="[0-9\-]*"
+                    autoFocus
+                  />
+                  <button 
+                    onClick={toggleNumpad}
+                    className="absolute right-2 top-3 bg-gray-200 p-1 rounded-full hover:bg-gray-300"
+                    type="button"
+                  >
+                    {showNumpad ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                
+                {normalizedPersonnummer && normalizedPersonnummer !== personnummer && (
+                  <p className="mt-1 text-sm text-gray-600">
+                    Kommer att sparas som: {normalizedPersonnummer}
+                  </p>
+                )}
+                
+                {/* Show numpad by default */}
+                {showNumpad && <Numpad />}
               </div>
               
-              {normalizedPersonnummer && normalizedPersonnummer !== personnummer && (
-                <p className="mt-1 text-sm text-gray-600">
-                  Kommer att sparas som: {normalizedPersonnummer}
-                </p>
+              {/* Display employee name if registered */}
+              {isRegistered && name && (
+                <div className="mb-4 p-2 bg-blue-50 rounded">
+                  <p className="font-semibold">{name}</p>
+                  {statusMessage && <p className="text-sm text-gray-600">{statusMessage}</p>}
+                </div>
               )}
               
-              {/* Show numpad by default */}
-              {showNumpad && <Numpad />}
+              {/* Show shift form if required and user is checking in */}
+              {requireShiftInfo && !isCheckedIn && isRegistered && (
+                <ShiftForm />
+              )}
+              
+              <button
+                type="submit"
+                disabled={loading || !personnummer}
+                className={`w-full py-3 px-4 rounded-lg text-white font-medium text-lg ${
+                  isCheckedIn 
+                    ? 'bg-red-500 hover:bg-red-600 active:bg-red-700' 
+                    : 'bg-green-500 hover:bg-green-600 active:bg-green-700'
+                } disabled:opacity-50 transition-colors`}
+              >
+                {loading 
+                  ? 'Bearbetar...' 
+                  : isCheckedIn 
+                    ? 'Stämpla ut' 
+                    : 'Stämpla in'
+                }
+              </button>
+            </form>
+          ) : (
+            <div className="flex justify-center my-8">
+              <button
+                onClick={() => {
+                  setSuccess('');
+                  setIsRegistered(false);
+                  setIsCheckedIn(false);
+                  setStatusMessage('');
+                }}
+                className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-6 rounded-lg text-lg font-medium"
+              >
+                Nytt personnummer
+              </button>
             </div>
-            
-            {/* Display employee name if registered */}
-            {isRegistered && name && (
-              <div className="mb-4 p-2 bg-blue-50 rounded">
-                <p className="font-semibold">{name}</p>
-                {statusMessage && <p className="text-sm text-gray-600">{statusMessage}</p>}
-              </div>
-            )}
-            
-            {/* Show shift form if required and user is checking in */}
-            {requireShiftInfo && !isCheckedIn && isRegistered && (
-              <ShiftForm />
-            )}
-            
-            <button
-              type="submit"
-              disabled={loading || !personnummer}
-              className={`w-full py-3 px-4 rounded-lg text-white font-medium text-lg ${
-                isCheckedIn 
-                  ? 'bg-red-500 hover:bg-red-600 active:bg-red-700' 
-                  : 'bg-green-500 hover:bg-green-600 active:bg-green-700'
-              } disabled:opacity-50 transition-colors`}
-            >
-              {loading 
-                ? 'Bearbetar...' 
-                : isCheckedIn 
-                  ? 'Stämpla ut' 
-                  : 'Stämpla in'
-              }
-            </button>
-          </form>
+          )}
         </div>
         
         {/* Närvarolista */}
