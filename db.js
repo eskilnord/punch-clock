@@ -1,159 +1,341 @@
-// Database service for IndexedDB
+// IndexedDB Database Service
+
+// Database name and version
 const DB_NAME = 'stempelklocka';
 const DB_VERSION = 1;
 
-// Database schema and initialization
-const initDB = async () => {
-  return idb.openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      // Create employees store
+// Initialize the database
+const initDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    
+    request.onerror = event => {
+      reject(`Database error: ${event.target.error}`);
+    };
+    
+    request.onsuccess = event => {
+      resolve(event.target.result);
+    };
+    
+    // Create object stores if this is a new database or a version upgrade
+    request.onupgradeneeded = event => {
+      const db = event.target.result;
+      
+      // Store for employees
       if (!db.objectStoreNames.contains('employees')) {
         const employeeStore = db.createObjectStore('employees', { keyPath: 'personnummer' });
-        employeeStore.createIndex('personnummerIdx', 'personnummer', { unique: true });
+        employeeStore.createIndex('approved', 'approved', { unique: false });
+        employeeStore.createIndex('name', 'name', { unique: false });
       }
       
-      // Create timestamps store
+      // Store for timestamps
       if (!db.objectStoreNames.contains('timestamps')) {
         const timestampStore = db.createObjectStore('timestamps', { keyPath: 'id', autoIncrement: true });
-        timestampStore.createIndex('personnummerIdx', 'personnummer', { unique: false });
-        timestampStore.createIndex('dateIdx', 'date', { unique: false });
+        timestampStore.createIndex('personnummer', 'personnummer', { unique: false });
+        timestampStore.createIndex('checkInTime', 'checkInTime', { unique: false });
+        timestampStore.createIndex('checkOutTime', 'checkOutTime', { unique: false });
       }
       
-      // Create config store
+      // Store for configurations
       if (!db.objectStoreNames.contains('config')) {
         const configStore = db.createObjectStore('config', { keyPath: 'key' });
+        configStore.createIndex('value', 'value', { unique: false });
       }
-    }
+    };
   });
 };
 
-// Database operations
+// Database service object
 const dbService = {
-  // Config operations
-  async saveConfig(key, value) {
+  // Save a configuration value
+  saveConfig: async (key, value) => {
+    console.log("Saving config:", key, value);
     const db = await initDB();
-    await db.put('config', { key, value });
-  },
-  
-  async getConfig(key) {
-    const db = await initDB();
-    return await db.get('config', key);
-  },
-  
-  async savePin(pin) {
-    const hashedPin = CryptoJS.SHA256(pin).toString();
-    await this.saveConfig('pinHash', hashedPin);
-  },
-  
-  async verifyPin(pin) {
-    const storedPin = await this.getConfig('pinHash');
-    if (!storedPin) return false;
-    const hashedPin = CryptoJS.SHA256(pin).toString();
-    return storedPin.value === hashedPin;
-  },
-  
-  // Function to normalize personnummer before database operations
-  normalizePersonnummer(personnummer) {
-    // Check if utils is loaded
-    if (window.utils && typeof window.utils.normalizePersonnummer === 'function') {
-      return window.utils.normalizePersonnummer(personnummer);
-    }
-    return personnummer; // Fallback if utils is not loaded
-  },
-  
-  // Employee operations
-  async saveEmployee(employee) {
-    const db = await initDB();
-    // Make sure the personnummer is normalized
-    if (employee.personnummer) {
-      employee.personnummer = this.normalizePersonnummer(employee.personnummer);
-    }
-    await db.put('employees', employee);
-  },
-  
-  async getEmployee(personnummer) {
-    const db = await initDB();
-    // Normalize personnummer before lookup
-    const normalizedPnr = this.normalizePersonnummer(personnummer);
-    return await db.get('employees', normalizedPnr);
-  },
-  
-  async getAllEmployees() {
-    const db = await initDB();
-    return await db.getAll('employees');
-  },
-  
-  async deleteEmployee(personnummer) {
-    const db = await initDB();
-    // Normalize personnummer before deletion
-    const normalizedPnr = this.normalizePersonnummer(personnummer);
-    await db.delete('employees', normalizedPnr);
-  },
-  
-  // Timestamp operations
-  async saveTimestamp(personnummer, type) {
-    const db = await initDB();
-    // Normalize personnummer before saving timestamp
-    const normalizedPnr = this.normalizePersonnummer(personnummer);
-    const timestamp = {
-      personnummer: normalizedPnr,
-      type, // 'in' or 'out'
-      timestamp: new Date().toISOString(),
-      date: new Date().toISOString().split('T')[0]
-    };
-    return await db.add('timestamps', timestamp);
-  },
-  
-  async getTimestampsByPersonnummer(personnummer) {
-    const db = await initDB();
-    // Normalize personnummer before lookup
-    const normalizedPnr = this.normalizePersonnummer(personnummer);
-    const index = db.transaction('timestamps').store.index('personnummerIdx');
-    return await index.getAll(normalizedPnr);
-  },
-  
-  async getTimestampsByDate(startDate, endDate) {
-    const db = await initDB();
-    const index = db.transaction('timestamps').store.index('dateIdx');
-    const range = IDBKeyRange.bound(startDate, endDate);
-    return await index.getAll(range);
-  },
-  
-  async getAllTimestamps() {
-    const db = await initDB();
-    return await db.getAll('timestamps');
-  },
-  
-  async getLatestTimestampByPersonnummer(personnummer) {
-    const db = await initDB();
-    // Normalize personnummer before lookup
-    const normalizedPnr = this.normalizePersonnummer(personnummer);
-    const tx = db.transaction('timestamps', 'readonly');
-    const store = tx.objectStore('timestamps');
-    const index = store.index('personnummerIdx');
     
-    // Get all timestamps for this personnummer
-    const timestamps = await index.getAll(normalizedPnr);
-    
-    // Sort by timestamp descending and return the first one
-    if (timestamps && timestamps.length > 0) {
-      return timestamps.sort((a, b) => 
-        new Date(b.timestamp) - new Date(a.timestamp)
-      )[0];
-    }
-    
-    return null;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['config'], 'readwrite');
+      const store = transaction.objectStore('config');
+      
+      const request = store.put({ key, value });
+      
+      request.onsuccess = () => {
+        console.log(`Config saved: ${key} = ${value}`);
+        resolve(value); // Return the saved value for convenience
+      };
+      
+      request.onerror = event => {
+        reject(`Error saving config: ${event.target.error}`);
+      };
+    });
   },
   
-  async clearAllData() {
+  // Get a configuration value
+  getConfig: async (key) => {
     const db = await initDB();
-    const tx = db.transaction(['employees', 'timestamps', 'config'], 'readwrite');
-    await tx.objectStore('employees').clear();
-    await tx.objectStore('timestamps').clear();
-    await tx.objectStore('config').clear();
-    await tx.done;
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['config'], 'readonly');
+      const store = transaction.objectStore('config');
+      
+      const request = store.get(key);
+      
+      request.onsuccess = event => {
+        const result = event.target.result;
+        console.log(`Config retrieved: ${key} =`, result);
+        // Return only the value, not the whole object
+        resolve(result ? result.value : null);
+      };
+      
+      request.onerror = event => {
+        reject(`Error getting config: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Save an employee
+  saveEmployee: async (employee) => {
+    const db = await initDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['employees'], 'readwrite');
+      const store = transaction.objectStore('employees');
+      
+      const request = store.put(employee);
+      
+      request.onsuccess = () => {
+        resolve(employee);
+      };
+      
+      request.onerror = event => {
+        reject(`Error saving employee: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Get an employee by personnummer
+  getEmployee: async (personnummer) => {
+    const db = await initDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['employees'], 'readonly');
+      const store = transaction.objectStore('employees');
+      
+      const request = store.get(personnummer);
+      
+      request.onsuccess = event => {
+        resolve(event.target.result);
+      };
+      
+      request.onerror = event => {
+        reject(`Error getting employee: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Delete an employee by personnummer
+  deleteEmployee: async (personnummer) => {
+    const db = await initDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['employees'], 'readwrite');
+      const store = transaction.objectStore('employees');
+      
+      const request = store.delete(personnummer);
+      
+      request.onsuccess = () => {
+        resolve(true);
+      };
+      
+      request.onerror = event => {
+        reject(`Error deleting employee: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Get all employees
+  getAllEmployees: async () => {
+    const db = await initDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['employees'], 'readonly');
+      const store = transaction.objectStore('employees');
+      const employees = [];
+      
+      const request = store.openCursor();
+      
+      request.onsuccess = event => {
+        const cursor = event.target.result;
+        
+        if (cursor) {
+          employees.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(employees);
+        }
+      };
+      
+      request.onerror = event => {
+        reject(`Error getting all employees: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Save a timestamp
+  saveTimestamp: async (timestamp, extraData = null) => {
+    const db = await initDB();
+    
+    // If extraData is provided, merge it with the timestamp object
+    const fullTimestamp = extraData ? { ...timestamp, ...extraData } : timestamp;
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['timestamps'], 'readwrite');
+      const store = transaction.objectStore('timestamps');
+      
+      const request = store.put(fullTimestamp);
+      
+      request.onsuccess = event => {
+        resolve({ ...fullTimestamp, id: event.target.result });
+      };
+      
+      request.onerror = event => {
+        reject(`Error saving timestamp: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Get all timestamps for a specific employee
+  getTimestampsByPersonnummer: async (personnummer) => {
+    const db = await initDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['timestamps'], 'readonly');
+      const store = transaction.objectStore('timestamps');
+      const index = store.index('personnummer');
+      const timestamps = [];
+      
+      const request = index.openCursor(IDBKeyRange.only(personnummer));
+      
+      request.onsuccess = event => {
+        const cursor = event.target.result;
+        
+        if (cursor) {
+          timestamps.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(timestamps);
+        }
+      };
+      
+      request.onerror = event => {
+        reject(`Error getting timestamps: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Get all timestamps
+  getAllTimestamps: async () => {
+    const db = await initDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['timestamps'], 'readonly');
+      const store = transaction.objectStore('timestamps');
+      const timestamps = [];
+      
+      const request = store.openCursor();
+      
+      request.onsuccess = event => {
+        const cursor = event.target.result;
+        
+        if (cursor) {
+          timestamps.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(timestamps);
+        }
+      };
+      
+      request.onerror = event => {
+        reject(`Error getting all timestamps: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Get latest timestamp for an employee
+  getLatestTimestamp: async (personnummer) => {
+    const db = await initDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['timestamps'], 'readonly');
+      const store = transaction.objectStore('timestamps');
+      const index = store.index('personnummer');
+      
+      // Get all timestamps for the employee
+      const request = index.getAll(IDBKeyRange.only(personnummer));
+      
+      request.onsuccess = event => {
+        const timestamps = event.target.result;
+        if (timestamps.length === 0) {
+          resolve(null);
+          return;
+        }
+        
+        // Sort by time, latest first
+        timestamps.sort((a, b) => new Date(b.checkInTime) - new Date(a.checkInTime));
+        resolve(timestamps[0]);
+      };
+      
+      request.onerror = event => {
+        reject(`Error getting latest timestamp: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Get admin pin
+  verifyPin: async (pin) => {
+    const db = await initDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['config'], 'readonly');
+      const store = transaction.objectStore('config');
+      
+      const request = store.get('adminPin');
+      
+      request.onsuccess = event => {
+        const result = event.target.result;
+        // Compare just the values, not the whole stored object
+        resolve(result && result.value === pin);
+      };
+      
+      request.onerror = event => {
+        reject(`Error verifying PIN: ${event.target.error}`);
+      };
+    });
+  },
+  
+  // Clear all data
+  clearAllData: async () => {
+    const db = await initDB();
+    
+    const promises = ['employees', 'timestamps', 'config'].map(storeName => {
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        
+        const request = store.clear();
+        
+        request.onsuccess = () => {
+          resolve(true);
+        };
+        
+        request.onerror = event => {
+          reject(`Error clearing ${storeName}: ${event.target.error}`);
+        };
+      });
+    });
+    
+    return Promise.all(promises);
   }
 };
 
-// Export the dbService
+// Export the service
 window.dbService = dbService; 

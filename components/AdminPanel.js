@@ -50,7 +50,9 @@ const AdminPanel = ({ onLogout }) => {
   // Load app settings
   const loadSettings = async () => {
     try {
+      console.log("Loading settings...");
       const requireShift = await dbService.getConfig('requireShiftInfo');
+      console.log("Loaded requireShiftInfo:", requireShift);
       setRequireShiftInfo(requireShift === 'true');
     } catch (err) {
       console.error('Error loading settings:', err);
@@ -62,6 +64,7 @@ const AdminPanel = ({ onLogout }) => {
     setLoading(true);
     try {
       const newValue = !requireShiftInfo;
+      console.log("Saving requireShiftInfo:", newValue.toString());
       await dbService.saveConfig('requireShiftInfo', newValue.toString());
       setRequireShiftInfo(newValue);
       setSuccess(`Arbetspass-inmatning ${newValue ? 'aktiverad' : 'inaktiverad'}`);
