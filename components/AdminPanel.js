@@ -48,6 +48,14 @@ const AdminPanel = ({ onLogout }) => {
     scheduledVsActual: null
   });
   
+  // Skapa ny tidsstämpling manuellt
+  const [newTimestamp, setNewTimestamp] = React.useState({
+    checkInTime: new Date().toISOString(),
+    checkOutTime: null,
+    shiftInfo: { breakDuration: 0 }
+  });
+  const [showNewTimestampForm, setShowNewTimestampForm] = React.useState(false);
+  
   // Sätt isMountedRef till false när komponenten avmonteras
   React.useEffect(() => {
     return () => {
@@ -1036,6 +1044,68 @@ const AdminPanel = ({ onLogout }) => {
     return approvedMonths[selectedEmployee].includes(selectedMonth);
   };
   
+  // Hantera visning av formulär för ny tidsstämpling
+  const handleShowNewTimestampForm = () => {
+    // Skapa ett utgångsdatum från dagens datum men med valda månadens år och månad
+    const [year, month] = selectedMonth.split('-');
+    const today = new Date();
+    const defaultDate = new Date(year, month - 1, Math.min(today.getDate(), new Date(year, month, 0).getDate()));
+    
+    // Sätt standardtid till 08:00 för incheckning och 16:30 för utcheckning
+    const inTime = new Date(defaultDate);
+    inTime.setHours(8, 0, 0, 0);
+    
+    const outTime = new Date(defaultDate);
+    outTime.setHours(16, 30, 0, 0);
+    
+    setNewTimestamp({
+      personnummer: selectedEmployee,
+      checkInTime: inTime.toISOString(),
+      checkOutTime: outTime.toISOString(),
+      shiftInfo: { breakDuration: 30 }
+    });
+    
+    setShowNewTimestampForm(true);
+  };
+  
+  // Spara ny tidsstämpling
+  const handleSaveNewTimestamp = async () => {
+    if (!newTimestamp.checkInTime) {
+      setError('Incheckningstid måste anges.');
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      // Spara den nya tidsstämplingen
+      await dbService.saveTimestamp(newTimestamp);
+      
+      if (isMountedRef.current) {
+        // Uppdatera listan med stämplingar
+        loadEmployeeTimestamps();
+        setShowNewTimestampForm(false);
+        setSuccess('Ny tidsstämpling har skapats.');
+        
+        // Rensa meddelande efter några sekunder
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setSuccess('');
+          }
+        }, 3000);
+      }
+    } catch (err) {
+      console.error('Error saving new timestamp:', err);
+      if (isMountedRef.current) {
+        setError('Kunde inte spara ny tidsstämpling.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  };
+  
   return (
     <div className="max-w-6xl mx-auto py-6">
       <div className="flex justify-between items-center mb-6">
@@ -1365,7 +1435,143 @@ const AdminPanel = ({ onLogout }) => {
           {/* Tidsstämplingar */}
           {selectedEmployee && (
             <>
-              <h3 className="text-lg font-medium mb-3">Tidsstämplingar</h3>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-lg font-medium">Tidsstämplingar</h3>
+                {!isMonthApproved() && (
+                  <button
+                    onClick={handleShowNewTimestampForm}
+                    className="bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded-md text-sm"
+                    disabled={loading || timestampsLoading}
+                  >
+                    + Lägg till manuell stämpling
+                  </button>
+                )}
+              </div>
+              
+              {/* Formulär för att lägga till ny tidsstämpling */}
+              {showNewTimestampForm && (
+                <div className="mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-medium">Lägg till ny tidsstämpling</h4>
+                    <button
+                      onClick={() => setShowNewTimestampForm(false)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm text-gray-700 mb-1">Datum</label>
+                      <input
+                        type="date"
+                        value={new Date(newTimestamp.checkInTime).toISOString().split('T')[0]}
+                        onChange={(e) => {
+                          const newDate = e.target.value;
+                          
+                          // Uppdatera incheckningstid
+                          const inTime = new Date(newTimestamp.checkInTime);
+                          const newInDateTime = new Date(`${newDate}T${inTime.toTimeString().slice(0, 8)}`);
+                          
+                          // Uppdatera utcheckningstid om den finns
+                          let newOutDateTime = null;
+                          if (newTimestamp.checkOutTime) {
+                            const outTime = new Date(newTimestamp.checkOutTime);
+                            newOutDateTime = new Date(`${newDate}T${outTime.toTimeString().slice(0, 8)}`);
+                          }
+                          
+                          setNewTimestamp({
+                            ...newTimestamp,
+                            checkInTime: newInDateTime.toISOString(),
+                            checkOutTime: newOutDateTime ? newOutDateTime.toISOString() : null
+                          });
+                        }}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm text-gray-700 mb-1">Incheckning</label>
+                      <input
+                        type="time"
+                        value={new Date(newTimestamp.checkInTime).toTimeString().slice(0, 5)}
+                        onChange={(e) => {
+                          const oldDate = new Date(newTimestamp.checkInTime).toISOString().split('T')[0];
+                          const newTime = e.target.value;
+                          const newDateTime = new Date(`${oldDate}T${newTime}`);
+                          
+                          setNewTimestamp({
+                            ...newTimestamp,
+                            checkInTime: newDateTime.toISOString()
+                          });
+                        }}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm text-gray-700 mb-1">Utcheckning</label>
+                      <input
+                        type="time"
+                        value={newTimestamp.checkOutTime ? new Date(newTimestamp.checkOutTime).toTimeString().slice(0, 5) : ''}
+                        onChange={(e) => {
+                          const oldDate = new Date(newTimestamp.checkInTime).toISOString().split('T')[0];
+                          const newTime = e.target.value;
+                          
+                          let newOutDateTime = null;
+                          if (newTime) {
+                            newOutDateTime = new Date(`${oldDate}T${newTime}`);
+                          }
+                          
+                          setNewTimestamp({
+                            ...newTimestamp,
+                            checkOutTime: newTime ? newOutDateTime.toISOString() : null
+                          });
+                        }}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm text-gray-700 mb-1">Rast (minuter)</label>
+                      <input
+                        type="number"
+                        value={newTimestamp.shiftInfo?.breakDuration || 0}
+                        onChange={(e) => {
+                          const newBreakDuration = e.target.value;
+                          setNewTimestamp({
+                            ...newTimestamp,
+                            shiftInfo: {
+                              ...newTimestamp.shiftInfo || {},
+                              breakDuration: newBreakDuration
+                            }
+                          });
+                        }}
+                        min="0"
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="text-right">
+                    <button
+                      onClick={() => setShowNewTimestampForm(false)}
+                      className="bg-gray-300 hover:bg-gray-400 text-gray-800 py-2 px-4 rounded-md mr-2"
+                      disabled={loading}
+                    >
+                      Avbryt
+                    </button>
+                    <button
+                      onClick={handleSaveNewTimestamp}
+                      className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md"
+                      disabled={loading}
+                    >
+                      Spara
+                    </button>
+                  </div>
+                </div>
+              )}
               
               {timestampsLoading ? (
                 <div className="flex justify-center items-center h-40">
