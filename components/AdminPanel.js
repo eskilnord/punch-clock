@@ -2211,7 +2211,15 @@ const AdminPanel = ({ onLogout }) => {
                                     {new Date(ts.shiftInfo.scheduledEnd).toLocaleTimeString('sv-SE', {hour: '2-digit', minute: '2-digit'})}
                                   </>
                                 ) : (
-                                  <span className="text-gray-400">Ej angivet</span>
+                                  ts.shiftInfo?.startTime && ts.shiftInfo?.endTime ? (
+                                    <>
+                                      {ts.shiftInfo.startTime}
+                                      {' - '}
+                                      {ts.shiftInfo.endTime}
+                                    </>
+                                  ) : (
+                                    <span className="text-gray-400">Ej angivet</span>
+                                  )
                                 )}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm">
