@@ -398,6 +398,148 @@ const utils = {
     
     const title = `Arbetstidssammanställning ${startDate} - ${endDate}`;
     return utils.createPDF(title, pdfData, columns, filename);
+  },
+  
+  // Förbered data för grafer
+  prepareChartData: async (startDate, endDate) => {
+    try {
+      console.log("Preparing chart data for period:", startDate, "to", endDate);
+      const timestamps = await dbService.getAllTimestamps();
+      const employees = await dbService.getAllEmployees();
+      
+      // Skapa en karta av medarbetare för snabb uppslagning
+      const employeeMap = {};
+      employees.forEach(emp => {
+        employeeMap[emp.personnummer] = emp.name || emp.personnummer;
+      });
+      
+      // Filtrera tidsstämplar baserat på datumintervall
+      let filteredTimestamps = timestamps;
+      
+      if (startDate && endDate) {
+        filteredTimestamps = timestamps.filter(ts => {
+          const date = new Date(ts.checkInTime).toISOString().split('T')[0];
+          return date >= startDate && date <= endDate;
+        });
+      }
+      
+      // Data för timvis aktivitet under dagen
+      const hourlyActivity = Array(24).fill(0);
+      
+      // Data för antal aktiva medarbetare per dag
+      const employeeActivity = {};
+      
+      // Data för arbetad tid per medarbetare
+      const workedHoursPerEmployee = {};
+      
+      // Data för schemalagd vs faktisk tid
+      const scheduledVsActual = {
+        labels: [],
+        scheduled: [],
+        actual: []
+      };
+      
+      // Gå igenom alla tidsstämplar för att beräkna data
+      filteredTimestamps.forEach(ts => {
+        if (ts.checkInTime) {
+          const checkInDate = new Date(ts.checkInTime);
+          const dateKey = checkInDate.toISOString().split('T')[0];
+          const hour = checkInDate.getHours();
+          
+          // Räkna aktivitet per timme
+          hourlyActivity[hour]++;
+          
+          // Räkna aktiva medarbetare per dag
+          if (!employeeActivity[dateKey]) {
+            employeeActivity[dateKey] = new Set();
+          }
+          employeeActivity[dateKey].add(ts.personnummer);
+          
+          // Beräkna arbetad tid per medarbetare
+          if (ts.checkOutTime) {
+            const workHours = utils.timestampToHours(
+              ts.checkInTime, ts.checkOutTime, ts.shiftInfo?.breakDuration || 0
+            );
+            
+            const empName = employeeMap[ts.personnummer] || ts.personnummer;
+            if (!workedHoursPerEmployee[empName]) {
+              workedHoursPerEmployee[empName] = 0;
+            }
+            workedHoursPerEmployee[empName] += workHours;
+            
+            // Beräkna schemalagd vs faktisk tid
+            if (ts.shiftInfo && ts.shiftInfo.startTime && ts.shiftInfo.endTime) {
+              const startParts = ts.shiftInfo.startTime.split(':');
+              const endParts = ts.shiftInfo.endTime.split(':');
+              
+              if (startParts.length === 2 && endParts.length === 2) {
+                const startHour = parseInt(startParts[0]);
+                const startMinute = parseInt(startParts[1]);
+                const endHour = parseInt(endParts[0]);
+                const endMinute = parseInt(endParts[1]);
+                
+                let scheduledMinutes = ((endHour * 60 + endMinute) - (startHour * 60 + startMinute));
+                // Hantera nattskift
+                if (scheduledMinutes < 0) {
+                  scheduledMinutes += 24 * 60;
+                }
+                
+                // Dra bort rast
+                const breakMinutes = parseInt(ts.shiftInfo.breakDuration || 0);
+                const scheduledHours = (scheduledMinutes - breakMinutes) / 60;
+                
+                // Lägg till i data för schemalagd vs faktisk tid
+                scheduledVsActual.labels.push(dateKey);
+                scheduledVsActual.scheduled.push(scheduledHours);
+                scheduledVsActual.actual.push(workHours);
+              }
+            }
+          }
+        }
+      });
+      
+      // Formatera data för antalet aktiva medarbetare per dag
+      const employeeActivityData = {
+        labels: Object.keys(employeeActivity).sort(),
+        data: Object.keys(employeeActivity).sort().map(date => employeeActivity[date].size)
+      };
+      
+      // Formatera data för arbetad tid per medarbetare
+      const workedHoursData = {
+        labels: Object.keys(workedHoursPerEmployee),
+        data: Object.values(workedHoursPerEmployee)
+      };
+      
+      // Sortera data för arbetad tid
+      const sortedIndices = workedHoursData.data
+        .map((time, index) => ({ time, index }))
+        .sort((a, b) => b.time - a.time)
+        .map(item => item.index);
+      
+      workedHoursData.labels = sortedIndices.map(index => workedHoursData.labels[index]);
+      workedHoursData.data = sortedIndices.map(index => workedHoursData.data[index]);
+      
+      // Begränsa till top 10 medarbetare för bättre visualisering
+      if (workedHoursData.labels.length > 10) {
+        workedHoursData.labels = workedHoursData.labels.slice(0, 10);
+        workedHoursData.data = workedHoursData.data.slice(0, 10);
+      }
+      
+      console.log("Chart data prepared successfully");
+      
+      return {
+        hourlyActivity: {
+          labels: Array.from({ length: 24 }, (_, i) => `${i}:00`),
+          data: hourlyActivity
+        },
+        employeeActivity: employeeActivityData,
+        workedHours: workedHoursData,
+        scheduledVsActual: scheduledVsActual
+      };
+    } catch (error) {
+      console.error("Error preparing chart data:", error);
+      throw error;
+    }
   }
 };
 
