@@ -1,5 +1,8 @@
 // Employee Form Component - For checking in/out
 const EmployeeForm = ({ onLogout }) => {
+  // Lägg till en ref för att spåra om komponenten är monterad
+  const isMountedRef = React.useRef(true);
+  
   const [isRegistered, setIsRegistered] = React.useState(false);
   const [isCheckedIn, setIsCheckedIn] = React.useState(false);
   const [personnummer, setPersonnummer] = React.useState('');
@@ -32,12 +35,21 @@ const EmployeeForm = ({ onLogout }) => {
     { label: 'Natt (22:00-06:00)', startTime: '22:00', endTime: '06:00', breakTime: 30 }
   ]);
   
+  // Sätt isMountedRef till false när komponenten avmonteras
+  React.useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  
   // Update current date and time every minute
   React.useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentDateTime(new Date());
-      // Uppdatera även närvarolistan varje minut
-      loadEmployeeStatus();
+      if (isMountedRef.current) {
+        setCurrentDateTime(new Date());
+        // Uppdatera även närvarolistan varje minut
+        loadEmployeeStatus();
+      }
     }, 60000); // Update every 60 seconds
     
     return () => clearInterval(timer);
@@ -56,21 +68,24 @@ const EmployeeForm = ({ onLogout }) => {
       const requireShift = await dbService.getConfig('requireShiftInfo');
       console.log("Loaded requireShiftInfo:", requireShift);
       const shouldRequireShift = requireShift === 'true';
-      setRequireShiftInfo(shouldRequireShift);
-      console.log("Setting requireShiftInfo to:", shouldRequireShift);
       
-      // Initialize times to current hour (rounded)
-      const now = new Date();
-      const currentHour = now.getHours();
-      const roundedNow = new Date(now.setMinutes(0, 0, 0));
-      const endTime = new Date(roundedNow);
-      endTime.setHours(currentHour + 8); // Default 8 hour shift
-      
-      setShiftInfo({
-        ...shiftInfo,
-        startTime: roundedNow.toTimeString().substring(0, 5), // HH:MM format
-        endTime: endTime.toTimeString().substring(0, 5) // HH:MM format
-      });
+      if (isMountedRef.current) {
+        setRequireShiftInfo(shouldRequireShift);
+        console.log("Setting requireShiftInfo to:", shouldRequireShift);
+        
+        // Initialize times to current hour (rounded)
+        const now = new Date();
+        const currentHour = now.getHours();
+        const roundedNow = new Date(now.setMinutes(0, 0, 0));
+        const endTime = new Date(roundedNow);
+        endTime.setHours(currentHour + 8); // Default 8 hour shift
+        
+        setShiftInfo({
+          ...shiftInfo,
+          startTime: roundedNow.toTimeString().substring(0, 5), // HH:MM format
+          endTime: endTime.toTimeString().substring(0, 5) // HH:MM format
+        });
+      }
     } catch (err) {
       console.error('Error loading settings:', err);
     }
@@ -88,10 +103,14 @@ const EmployeeForm = ({ onLogout }) => {
   
   // Funktion för att ladda medarbetarnas status
   const loadEmployeeStatus = async () => {
+    if (!isMountedRef.current) return;
+    
     setLoadingEmployees(true);
     try {
       // Hämta alla medarbetare
       const employees = await dbService.getAllEmployees();
+      
+      if (!isMountedRef.current) return;
       
       // Skapa en array för att hålla närvarostatus
       const statusList = await Promise.all(
@@ -120,11 +139,15 @@ const EmployeeForm = ({ onLogout }) => {
         })
       );
       
-      setEmployeeList(statusList);
+      if (isMountedRef.current) {
+        setEmployeeList(statusList);
+      }
     } catch (error) {
       console.error("Error loading employee status:", error);
     } finally {
-      setLoadingEmployees(false);
+      if (isMountedRef.current) {
+        setLoadingEmployees(false);
+      }
     }
   };
   
@@ -147,6 +170,22 @@ const EmployeeForm = ({ onLogout }) => {
       setNormalizedPersonnummer('');
     }
   }, [personnummer]);
+  
+  // Periodically check if the employee is registered and check status
+  React.useEffect(() => {
+    if (normalizedPersonnummer) {
+      const checkInterval = setInterval(async () => {
+        if (isMountedRef.current) {
+          await checkStatus(normalizedPersonnummer);
+        }
+      }, 5000); // Check every 5 seconds
+      
+      // Initial check
+      checkStatus(normalizedPersonnummer);
+      
+      return () => clearInterval(checkInterval);
+    }
+  }, [normalizedPersonnummer]);
   
   // Add a digit to personnummer
   const addDigit = (digit) => {
@@ -259,10 +298,12 @@ const EmployeeForm = ({ onLogout }) => {
   
   // Check the status of the employee
   const checkStatus = async (pnr) => {
-    if (!pnr || loading) return;
+    if (!pnr || loading || !isMountedRef.current) return;
     
     try {
       const employee = await dbService.getEmployee(pnr);
+      
+      if (!isMountedRef.current) return;
       
       if (!employee) {
         setIsRegistered(false);
@@ -277,6 +318,8 @@ const EmployeeForm = ({ onLogout }) => {
       
       // Check if employee is checked in
       const timestamp = await dbService.getLatestTimestamp(pnr);
+      
+      if (!isMountedRef.current) return;
       
       if (timestamp && !timestamp.checkOutTime) {
         setIsCheckedIn(true);
@@ -319,6 +362,8 @@ const EmployeeForm = ({ onLogout }) => {
       // Check if employee exists
       const employee = await dbService.getEmployee(pnr);
       
+      if (!isMountedRef.current) return;
+      
       if (!employee) {
         // Register new employee if not exists
         await dbService.saveEmployee({
@@ -326,6 +371,8 @@ const EmployeeForm = ({ onLogout }) => {
           name: '',
           approved: false // Admin needs to approve new employees
         });
+        
+        if (!isMountedRef.current) return;
         
         setIsRegistered(true);
         setSuccess('Du har registrerats som ny medarbetare. Inväntar godkännande från administratör.');
@@ -342,6 +389,8 @@ const EmployeeForm = ({ onLogout }) => {
       // Check if employee is already checked in
       const timestamp = await dbService.getLatestTimestamp(pnr);
       let extraData = null;
+      
+      if (!isMountedRef.current) return;
       
       // If shift info is required, validate it
       if (requireShiftInfo && !isCheckedIn) {
@@ -369,6 +418,8 @@ const EmployeeForm = ({ onLogout }) => {
           checkOutTime: new Date().toISOString()
         });
         
+        if (!isMountedRef.current) return;
+        
         setIsCheckedIn(false);
         setStatusMessage('');
         setSuccess('Utstämpling registrerad');
@@ -379,6 +430,8 @@ const EmployeeForm = ({ onLogout }) => {
           checkInTime: new Date().toISOString(),
           checkOutTime: null
         }, extraData);
+        
+        if (!isMountedRef.current) return;
         
         setIsCheckedIn(true);
         const timeString = new Date().toLocaleTimeString('sv-SE', { 
@@ -401,9 +454,13 @@ const EmployeeForm = ({ onLogout }) => {
       });
     } catch (err) {
       console.error(err);
-      setError('Ett fel uppstod vid stämpling');
+      if (isMountedRef.current) {
+        setError('Ett fel uppstod vid stämpling');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
   
@@ -631,60 +688,64 @@ const EmployeeForm = ({ onLogout }) => {
   // Om användaren behöver registreras
   if (pendingRegistration) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-md max-w-md mx-auto">
-        <h2 className="text-2xl font-bold mb-2 text-center text-gray-800">Ny medarbetare</h2>
-        
-        <div className="mb-4 text-center text-gray-600">
-          <p className="text-sm">{formatDateTime()}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h2 className="text-2xl font-bold mb-2 text-center text-gray-800">Ny medarbetare</h2>
+          
+          <div className="mb-4 text-center text-gray-600">
+            <p className="text-sm">{formatDateTime()}</p>
+          </div>
+          
+          <p className="mb-4 text-gray-700">
+            Du är inte registrerad ännu. Fyll i ditt namn för att registrera dig.
+          </p>
+          
+          <div className="mb-4">
+            <label htmlFor="personnummer" className="block text-gray-700 mb-2">Personnummer</label>
+            <input
+              type="text"
+              id="personnummer"
+              value={personnummer}
+              disabled={true}
+              className="w-full px-4 py-2 border rounded-md bg-gray-100"
+            />
+          </div>
+          
+          <div className="mb-4">
+            <label htmlFor="name" className="block text-gray-700 mb-2">Ditt namn</label>
+            <input
+              type="text"
+              id="name"
+              placeholder="Ditt namn"
+              value={employeeName}
+              onChange={handleEmployeeNameChange}
+              className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+              autoFocus
+            />
+          </div>
+          
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setPendingRegistration(false)}
+              className="w-1/2 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md transition duration-200"
+              disabled={loading}
+            >
+              Avbryt
+            </button>
+            <button
+              onClick={handleCheckInOut}
+              disabled={loading}
+              className="w-1/2 bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md transition duration-200"
+            >
+              {loading ? 'Registrerar...' : 'Registrera & stämpla in'}
+            </button>
+          </div>
+          
+          {error && <p className="text-red-500 mt-4">{error}</p>}
         </div>
         
-        <p className="mb-4 text-gray-700">
-          Du är inte registrerad ännu. Fyll i ditt namn för att registrera dig.
-        </p>
-        
-        <div className="mb-4">
-          <label htmlFor="personnummer" className="block text-gray-700 mb-2">Personnummer</label>
-          <input
-            type="text"
-            id="personnummer"
-            value={personnummer}
-            disabled={true}
-            className="w-full px-4 py-2 border rounded-md bg-gray-100"
-          />
-        </div>
-        
-        <div className="mb-4">
-          <label htmlFor="name" className="block text-gray-700 mb-2">Ditt namn</label>
-          <input
-            type="text"
-            id="name"
-            placeholder="Ditt namn"
-            value={employeeName}
-            onChange={handleEmployeeNameChange}
-            className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={loading}
-            autoFocus
-          />
-        </div>
-        
-        <div className="flex space-x-2">
-          <button
-            onClick={() => setPendingRegistration(false)}
-            className="w-1/2 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md transition duration-200"
-            disabled={loading}
-          >
-            Avbryt
-          </button>
-          <button
-            onClick={handleCheckInOut}
-            disabled={loading}
-            className="w-1/2 bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md transition duration-200"
-          >
-            {loading ? 'Registrerar...' : 'Registrera & stämpla in'}
-          </button>
-        </div>
-        
-        {error && <p className="text-red-500 mt-4">{error}</p>}
+        <PresenceList />
       </div>
     );
   }
@@ -693,116 +754,141 @@ const EmployeeForm = ({ onLogout }) => {
   if (showShiftForm) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <ShiftForm />
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-xl font-semibold mb-4">Information om arbetspass</h3>
+          <ShiftForm />
+          
+          <div className="mt-4 flex space-x-3">
+            <button
+              onClick={() => setShowShiftForm(false)}
+              className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-md flex-1"
+            >
+              Avbryt
+            </button>
+            <button
+              onClick={handleCheckInOut}
+              disabled={loading}
+              className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md flex-1"
+            >
+              {loading ? 'Bearbetar...' : 'Stämpla in'}
+            </button>
+          </div>
+        </div>
         <PresenceList />
       </div>
     );
   }
   
+  // Standardvyn med stämpelklocka och närvarolista
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 max-w-md mx-auto">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold text-gray-800">Stämpelklocka</h2>
-        <button
-          onClick={onLogout}
-          className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-1 px-3 rounded-md text-sm"
-        >
-          Admin
-        </button>
-      </div>
-      
-      {/* Current Date and Time */}
-      <div className="mb-4 text-center text-gray-600">
-        <p>{formatDateTime()}</p>
-      </div>
-      
-      {/* Status messages */}
-      {error && (
-        <div className="mb-4 p-2 bg-red-100 text-red-700 rounded">
-          {error}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold text-gray-800">Stämpelklocka</h2>
+          <button
+            onClick={onLogout}
+            className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-1 px-3 rounded-md text-sm"
+          >
+            Admin
+          </button>
         </div>
-      )}
-      
-      {success && (
-        <div className="mb-4 p-2 bg-green-100 text-green-700 rounded">
-          {success}
+        
+        {/* Current Date and Time */}
+        <div className="mb-4 text-center text-gray-600">
+          <p>{formatDateTime()}</p>
         </div>
-      )}
-      
-      {/* Input form */}
-      <form onSubmit={handleCheckInOut}>
-        <div className="mb-4">
-          <label htmlFor="personnummer" className="block text-gray-700 mb-1">Personnummer</label>
-          <div className="relative">
-            <input
-              type="text"
-              id="personnummer"
-              placeholder="ÅÅÅÅMMDD-XXXX"
-              value={personnummer}
-              onChange={(e) => setPersonnummer(e.target.value)}
-              className="w-full px-4 py-3 border rounded-md text-lg"
-              disabled={loading}
-              inputMode="numeric"
-              pattern="[0-9-]*"
-              autoFocus
-            />
-            <button 
-              onClick={toggleNumpad}
-              className="absolute right-2 top-3 bg-gray-200 p-1 rounded-full hover:bg-gray-300"
-              type="button"
-            >
-              {showNumpad ? (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                </svg>
-              )}
-            </button>
+        
+        {/* Status messages */}
+        {error && (
+          <div className="mb-4 p-2 bg-red-100 text-red-700 rounded">
+            {error}
+          </div>
+        )}
+        
+        {success && (
+          <div className="mb-4 p-2 bg-green-100 text-green-700 rounded">
+            {success}
+          </div>
+        )}
+        
+        {/* Input form */}
+        <form onSubmit={handleCheckInOut}>
+          <div className="mb-4">
+            <label htmlFor="personnummer" className="block text-gray-700 mb-1">Personnummer</label>
+            <div className="relative">
+              <input
+                type="text"
+                id="personnummer"
+                placeholder="ÅÅÅÅMMDD-XXXX"
+                value={personnummer}
+                onChange={(e) => setPersonnummer(e.target.value)}
+                className="w-full px-4 py-3 border rounded-md text-lg"
+                disabled={loading}
+                inputMode="numeric"
+                pattern="[0-9-]*"
+                autoFocus
+              />
+              <button 
+                onClick={toggleNumpad}
+                className="absolute right-2 top-3 bg-gray-200 p-1 rounded-full hover:bg-gray-300"
+                type="button"
+              >
+                {showNumpad ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                  </svg>
+                )}
+              </button>
+            </div>
+            
+            {normalizedPersonnummer && normalizedPersonnummer !== personnummer && (
+              <p className="mt-1 text-sm text-gray-600">
+                Kommer att sparas som: {normalizedPersonnummer}
+              </p>
+            )}
+            
+            {/* Show numpad by default */}
+            {showNumpad && <Numpad />}
           </div>
           
-          {normalizedPersonnummer && normalizedPersonnummer !== personnummer && (
-            <p className="mt-1 text-sm text-gray-600">
-              Kommer att sparas som: {normalizedPersonnummer}
-            </p>
+          {/* Display employee name if registered */}
+          {isRegistered && name && (
+            <div className="mb-4 p-2 bg-blue-50 rounded">
+              <p className="font-semibold">{name}</p>
+              {statusMessage && <p className="text-sm text-gray-600">{statusMessage}</p>}
+            </div>
           )}
           
-          {/* Show numpad by default */}
-          {showNumpad && <Numpad />}
-        </div>
-        
-        {/* Display employee name if registered */}
-        {isRegistered && name && (
-          <div className="mb-4 p-2 bg-blue-50 rounded">
-            <p className="font-semibold">{name}</p>
-            {statusMessage && <p className="text-sm text-gray-600">{statusMessage}</p>}
-          </div>
-        )}
-        
-        {/* Show shift form if required and user is checking in */}
-        {requireShiftInfo && !isCheckedIn && isRegistered && (
-          <ShiftForm />
-        )}
-        
-        <button
-          type="submit"
-          disabled={loading || !personnummer}
-          className={`w-full py-3 px-4 rounded-lg text-white font-medium text-lg ${
-            isCheckedIn 
-              ? 'bg-red-500 hover:bg-red-600 active:bg-red-700' 
-              : 'bg-green-500 hover:bg-green-600 active:bg-green-700'
-          } disabled:opacity-50 transition-colors`}
-        >
-          {loading 
-            ? 'Bearbetar...' 
-            : isCheckedIn 
-              ? 'Stämpla ut' 
-              : 'Stämpla in'
-          }
-        </button>
-      </form>
+          {/* Show shift form if required and user is checking in */}
+          {requireShiftInfo && !isCheckedIn && isRegistered && (
+            <ShiftForm />
+          )}
+          
+          <button
+            type="submit"
+            disabled={loading || !personnummer}
+            className={`w-full py-3 px-4 rounded-lg text-white font-medium text-lg ${
+              isCheckedIn 
+                ? 'bg-red-500 hover:bg-red-600 active:bg-red-700' 
+                : 'bg-green-500 hover:bg-green-600 active:bg-green-700'
+            } disabled:opacity-50 transition-colors`}
+          >
+            {loading 
+              ? 'Bearbetar...' 
+              : isCheckedIn 
+                ? 'Stämpla ut' 
+                : 'Stämpla in'
+            }
+          </button>
+        </form>
+      </div>
+      
+      {/* Närvarolista */}
+      <PresenceList />
     </div>
   );
 };
