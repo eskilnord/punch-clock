@@ -2,7 +2,7 @@
 
 // Database name and version
 const DB_NAME = 'stempelklocka';
-const DB_VERSION = 3;
+const DB_VERSION = 4; // Increment version to force upgrade
 
 // Initialize the database
 const initDB = () => {
@@ -10,10 +10,12 @@ const initDB = () => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     
     request.onerror = event => {
+      console.error(`Database error:`, event.target.error);
       reject(`Database error: ${event.target.error}`);
     };
     
     request.onsuccess = event => {
+      console.log("Database opened successfully");
       resolve(event.target.result);
     };
     
@@ -30,24 +32,18 @@ const initDB = () => {
         employeeStore.createIndex('name', 'name', { unique: false });
       }
       
-      // Store for timestamps
-      if (!db.objectStoreNames.contains('timestamps')) {
-        console.log("Creating timestamps store");
-        const timestampStore = db.createObjectStore('timestamps', { keyPath: 'id', autoIncrement: true });
-        timestampStore.createIndex('personnummer', 'personnummer', { unique: false });
-        timestampStore.createIndex('checkInTime', 'checkInTime', { unique: false });
-        timestampStore.createIndex('checkOutTime', 'checkOutTime', { unique: false });
-        timestampStore.createIndex('byPersonnummerAndTime', ['personnummer', 'checkInTime'], { unique: false });
-      } else if (event.oldVersion < 3) {
-        // If upgrading from pre-v3, delete and recreate timestamps store
-        console.log("Recreating timestamps store");
+      // Clear and recreate timestamps store for v4
+      if (db.objectStoreNames.contains('timestamps')) {
+        console.log("Deleting existing timestamps store");
         db.deleteObjectStore('timestamps');
-        const timestampStore = db.createObjectStore('timestamps', { keyPath: 'id', autoIncrement: true });
-        timestampStore.createIndex('personnummer', 'personnummer', { unique: false });
-        timestampStore.createIndex('checkInTime', 'checkInTime', { unique: false });
-        timestampStore.createIndex('checkOutTime', 'checkOutTime', { unique: false });
-        timestampStore.createIndex('byPersonnummerAndTime', ['personnummer', 'checkInTime'], { unique: false });
       }
+      
+      console.log("Creating timestamps store with proper indexes");
+      const timestampStore = db.createObjectStore('timestamps', { keyPath: 'id', autoIncrement: true });
+      timestampStore.createIndex('personnummer', 'personnummer', { unique: false });
+      timestampStore.createIndex('checkInTime', 'checkInTime', { unique: false });
+      timestampStore.createIndex('checkOutTime', 'checkOutTime', { unique: false });
+      timestampStore.createIndex('byPersonnummerAndTime', ['personnummer', 'checkInTime'], { unique: false });
       
       // Store for configurations
       if (!db.objectStoreNames.contains('config')) {
@@ -241,32 +237,57 @@ const dbService = {
     // If extraData is provided, merge it with the timestamp object
     const fullTimestamp = extraData ? { ...timestamp, ...extraData } : timestamp;
     
+    // Ensure checkInTime is properly formatted and exists
+    if (!fullTimestamp.checkInTime) {
+      fullTimestamp.checkInTime = new Date().toISOString();
+    }
+    
     console.log("Saving timestamp:", fullTimestamp);
     
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['timestamps'], 'readwrite');
-      const store = transaction.objectStore('timestamps');
-      
-      const request = store.put(fullTimestamp);
-      
-      request.onsuccess = event => {
-        const id = event.target.result;
-        console.log(`Timestamp saved with ID: ${id}`);
-        resolve({ ...fullTimestamp, id: id });
-      };
-      
-      request.onerror = event => {
-        console.error(`Error saving timestamp:`, event.target.error);
-        reject(`Error saving timestamp: ${event.target.error}`);
-      };
-      
-      transaction.oncomplete = () => {
-        console.log("Timestamp transaction completed");
-      };
-      
-      transaction.onerror = (event) => {
-        console.error("Timestamp transaction error:", event.target.error);
-      };
+      try {
+        const transaction = db.transaction(['timestamps'], 'readwrite');
+        transaction.onerror = (event) => {
+          console.error("Transaction error:", event.target.error);
+          reject(`Transaction error: ${event.target.error}`);
+        };
+        
+        const store = transaction.objectStore('timestamps');
+        
+        const request = store.add(fullTimestamp); // Use add instead of put since id is auto-increment
+        
+        request.onsuccess = event => {
+          const id = event.target.result;
+          console.log(`Timestamp saved with ID: ${id}`, fullTimestamp);
+          
+          // Add the ID to the saved timestamp object
+          const savedTimestamp = { ...fullTimestamp, id };
+          
+          // Double check the save by reading it back
+          const verifyRequest = store.get(id);
+          verifyRequest.onsuccess = () => {
+            console.log("Verified saved timestamp:", verifyRequest.result);
+            resolve(savedTimestamp);
+          };
+          
+          verifyRequest.onerror = (error) => {
+            console.error("Failed to verify saved timestamp:", error);
+            resolve(savedTimestamp); // Still resolve with the saved timestamp
+          };
+        };
+        
+        request.onerror = event => {
+          console.error(`Error saving timestamp:`, event.target.error);
+          reject(`Error saving timestamp: ${event.target.error}`);
+        };
+        
+        transaction.oncomplete = () => {
+          console.log("Timestamp transaction completed successfully");
+        };
+      } catch (err) {
+        console.error("Error in saveTimestamp:", err);
+        reject(`Error in saveTimestamp: ${err.message}`);
+      }
     });
   },
   
@@ -289,6 +310,7 @@ const dbService = {
           timestamps.push(cursor.value);
           cursor.continue();
         } else {
+          console.log(`Found ${timestamps.length} timestamps for ${personnummer}`);
           resolve(timestamps);
         }
       };
@@ -329,35 +351,11 @@ const dbService = {
   
   // Get latest timestamp for an employee
   getLatestTimestamp: async (personnummer) => {
-    const db = await initDB();
-    
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['timestamps'], 'readonly');
-      const store = transaction.objectStore('timestamps');
-      const index = store.index('personnummer');
-      
-      // Get all timestamps for the employee
-      const request = index.getAll(IDBKeyRange.only(personnummer));
-      
-      request.onsuccess = event => {
-        const timestamps = event.target.result;
-        if (timestamps.length === 0) {
-          resolve(null);
-          return;
-        }
-        
-        // Sort by time, latest first
-        timestamps.sort((a, b) => new Date(b.checkInTime) - new Date(a.checkInTime));
-        resolve(timestamps[0]);
-      };
-      
-      request.onerror = event => {
-        reject(`Error getting latest timestamp: ${event.target.error}`);
-      };
-    });
+    console.log(`Legacy getLatestTimestamp called for ${personnummer}, redirecting to getLatestTimestampByPersonnummer`);
+    return dbService.getLatestTimestampByPersonnummer(personnummer);
   },
   
-  // Get latest timestamp by personnummer (for backward compatibility)
+  // Get latest timestamp by personnummer
   getLatestTimestampByPersonnummer: async (personnummer) => {
     const db = await initDB();
     
@@ -368,74 +366,37 @@ const dbService = {
         const transaction = db.transaction(['timestamps'], 'readonly');
         const store = transaction.objectStore('timestamps');
         
-        // Först försöker vi med index
-        if (store.indexNames.contains('byPersonnummerAndTime')) {
-          console.log("Using byPersonnummerAndTime index");
-          const index = store.index('byPersonnummerAndTime');
-          
-          // Använd IDBKeyRange för att hitta alla tidsstämplar för medarbetaren
-          const range = IDBKeyRange.bound(
-            [personnummer, 0],     // Lägsta värdet
-            [personnummer, Date.now()]  // Högsta värdet
-          );
-          
-          // Använd openCursor med prev för att få den senaste först
-          const request = index.openCursor(range, 'prev');
-          
-          request.onsuccess = event => {
-            const cursor = event.target.result;
-            if (cursor) {
-              // Första träffen är den senaste tidsstämpeln
-              console.log("Found latest timestamp with index:", cursor.value);
-              resolve(cursor.value);
-            } else {
-              console.log("No timestamps found for personnummer:", personnummer);
-              resolve(null);
-            }
-          };
-          
-          request.onerror = event => {
-            console.error("Error using index:", event.target.error);
-            // Fallback till personnummer index
-            fallbackToPersonnummerIndex();
-          };
-          
-        } else {
-          console.log("byPersonnummerAndTime index not found, falling back");
-          fallbackToPersonnummerIndex();
-        }
+        // Simplify to just use the personnummer index and sort manually
+        console.log("Using personnummer index and manual sorting");
+        const index = store.index('personnummer');
+        const request = index.getAll(IDBKeyRange.only(personnummer));
         
-        // Fallback-funktion om primärindex inte fungerar
-        function fallbackToPersonnummerIndex() {
-          console.log("Falling back to personnummer index");
-          try {
-            const index = store.index('personnummer');
-            const request = index.getAll(IDBKeyRange.only(personnummer));
-            
-            request.onsuccess = event => {
-              const timestamps = event.target.result;
-              if (timestamps.length === 0) {
-                console.log("No timestamps found for personnummer (fallback):", personnummer);
-                resolve(null);
-                return;
-              }
-              
-              // Sort by time, latest first
-              timestamps.sort((a, b) => new Date(b.checkInTime) - new Date(a.checkInTime));
-              console.log("Found latest timestamp with fallback:", timestamps[0]);
-              resolve(timestamps[0]);
-            };
-            
-            request.onerror = event => {
-              console.error("Error in fallback method:", event.target.error);
-              reject(`Error getting latest timestamp by personnummer (fallback): ${event.target.error}`);
-            };
-          } catch (err) {
-            console.error("Error in fallback function:", err);
-            reject(`Internal error in fallback function: ${err.message}`);
+        request.onsuccess = event => {
+          const timestamps = event.target.result;
+          
+          console.log(`Found ${timestamps.length} timestamps for ${personnummer}:`, timestamps);
+          
+          if (timestamps.length === 0) {
+            console.log(`No timestamps found for personnummer: ${personnummer}`);
+            resolve(null);
+            return;
           }
-        }
+          
+          // Sort by checkInTime, latest first (newer dates are "greater")
+          timestamps.sort((a, b) => {
+            const dateA = new Date(a.checkInTime);
+            const dateB = new Date(b.checkInTime);
+            return dateB - dateA;
+          });
+          
+          console.log(`Latest timestamp for ${personnummer}:`, timestamps[0]);
+          resolve(timestamps[0]);
+        };
         
+        request.onerror = event => {
+          console.error(`Error getting timestamps for ${personnummer}:`, event.target.error);
+          reject(`Error getting latest timestamp by personnummer: ${event.target.error}`);
+        };
       } catch (err) {
         console.error("Error in getLatestTimestampByPersonnummer:", err);
         reject(`Error getting latest timestamp by personnummer: ${err.message}`);
