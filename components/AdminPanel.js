@@ -24,6 +24,16 @@ const AdminPanel = ({ onLogout }) => {
   const [chartData, setChartData] = React.useState(null);
   const [chartLoading, setChartLoading] = React.useState(false);
   
+  // Data för tidredgeringsfliken
+  const [selectedMonth, setSelectedMonth] = React.useState(
+    new Date().toISOString().substring(0, 7) // YYYY-MM format
+  );
+  const [selectedEmployee, setSelectedEmployee] = React.useState(null);
+  const [timestamps, setTimestamps] = React.useState([]);
+  const [timestampsLoading, setTimestampsLoading] = React.useState(false);
+  const [editingTimestamp, setEditingTimestamp] = React.useState(null);
+  const [approvedMonths, setApprovedMonths] = React.useState({});
+  
   // Referenser till graf-canvas
   const hourlyActivityChartRef = React.useRef(null);
   const employeeActivityChartRef = React.useRef(null);
@@ -65,6 +75,7 @@ const AdminPanel = ({ onLogout }) => {
   React.useEffect(() => {
     loadEmployees();
     loadSettings();
+    loadApprovedMonths();
   }, []);
   
   // Ladda in statistikdata när statistikfliken aktiveras
@@ -80,6 +91,271 @@ const AdminPanel = ({ onLogout }) => {
       renderCharts();
     }
   }, [chartData]);
+  
+  // Ladda tidsstämplingar när medarbetare eller månad väljs
+  React.useEffect(() => {
+    if (activeTab === 'timeEdit' && selectedEmployee) {
+      loadEmployeeTimestamps();
+    }
+  }, [activeTab, selectedEmployee, selectedMonth]);
+  
+  // Ladda in godkända månader
+  const loadApprovedMonths = async () => {
+    try {
+      const approvedData = await dbService.getConfig('approvedMonths');
+      if (approvedData) {
+        const parsed = typeof approvedData === 'string' ? JSON.parse(approvedData) : approvedData;
+        setApprovedMonths(parsed || {});
+      }
+    } catch (err) {
+      console.error('Error loading approved months:', err);
+    }
+  };
+  
+  // Spara godkända månader
+  const saveApprovedMonths = async (updatedApprovedMonths) => {
+    try {
+      await dbService.saveConfig('approvedMonths', JSON.stringify(updatedApprovedMonths));
+      setApprovedMonths(updatedApprovedMonths);
+    } catch (err) {
+      console.error('Error saving approved months:', err);
+      throw err;
+    }
+  };
+  
+  // Ladda en medarbetares tidsstämplingar för vald månad
+  const loadEmployeeTimestamps = async () => {
+    if (!selectedEmployee) return;
+    
+    setTimestampsLoading(true);
+    
+    try {
+      // Hämta alla tidsstämplingar
+      const allTimestamps = await dbService.getAllTimestamps();
+      
+      // Filtrera efter medarbetare och månad
+      const [year, month] = selectedMonth.split('-');
+      const startDate = new Date(year, month - 1, 1); // Månadens första dag
+      const endDate = new Date(year, month, 0); // Månadens sista dag
+      endDate.setHours(23, 59, 59, 999); // Sätt till slutet av dagen
+      
+      const filteredTimestamps = allTimestamps.filter(ts => {
+        const tsDate = new Date(ts.checkInTime);
+        return ts.personnummer === selectedEmployee &&
+               tsDate >= startDate &&
+               tsDate <= endDate;
+      });
+      
+      // Sortera efter datum (äldst först)
+      filteredTimestamps.sort((a, b) => new Date(a.checkInTime) - new Date(b.checkInTime));
+      
+      if (isMountedRef.current) {
+        setTimestamps(filteredTimestamps);
+      }
+    } catch (err) {
+      console.error('Error loading employee timestamps:', err);
+      if (isMountedRef.current) {
+        setError('Kunde inte ladda tidsstämplingar.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setTimestampsLoading(false);
+      }
+    }
+  };
+  
+  // Starta redigering av en tidsstämpling
+  const handleEditTimestamp = (timestamp) => {
+    setEditingTimestamp({...timestamp});
+  };
+  
+  // Avbryt redigering
+  const handleCancelEdit = () => {
+    setEditingTimestamp(null);
+  };
+  
+  // Spara redigerad tidsstämpling
+  const handleSaveTimestamp = async () => {
+    if (!editingTimestamp) return;
+    
+    setLoading(true);
+    
+    try {
+      // Spara den redigerade tidsstämplingen
+      await dbService.saveTimestamp(editingTimestamp);
+      
+      if (isMountedRef.current) {
+        // Uppdatera listan med stämplingar
+        loadEmployeeTimestamps();
+        setEditingTimestamp(null);
+        setSuccess('Tidsstämplingen har uppdaterats.');
+        
+        // Rensa meddelande efter några sekunder
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setSuccess('');
+          }
+        }, 3000);
+      }
+    } catch (err) {
+      console.error('Error saving timestamp:', err);
+      if (isMountedRef.current) {
+        setError('Kunde inte spara ändringar.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  };
+  
+  // Radera en tidsstämpling
+  const handleDeleteTimestamp = async (id) => {
+    if (!window.confirm('Är du säker på att du vill radera denna tidsstämpling?')) {
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      // Radera tidsstämplingen
+      await dbService.deleteTimestamp(id);
+      
+      if (isMountedRef.current) {
+        // Uppdatera listan med stämplingar
+        loadEmployeeTimestamps();
+        setSuccess('Tidsstämplingen har raderats.');
+        
+        // Rensa meddelande efter några sekunder
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setSuccess('');
+          }
+        }, 3000);
+      }
+    } catch (err) {
+      console.error('Error deleting timestamp:', err);
+      if (isMountedRef.current) {
+        setError('Kunde inte radera tidsstämplingen.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  };
+  
+  // Godkänn en medarbetares månadsrapport
+  const handleApproveMonth = async () => {
+    if (!selectedEmployee || !selectedMonth) return;
+    
+    setLoading(true);
+    
+    try {
+      // Uppdatera godkända månader
+      const updatedApprovedMonths = {...approvedMonths};
+      
+      if (!updatedApprovedMonths[selectedEmployee]) {
+        updatedApprovedMonths[selectedEmployee] = [];
+      }
+      
+      // Kontrollera om månaden redan är godkänd
+      if (!updatedApprovedMonths[selectedEmployee].includes(selectedMonth)) {
+        updatedApprovedMonths[selectedEmployee].push(selectedMonth);
+        
+        // Sortera månader i kronologisk ordning
+        updatedApprovedMonths[selectedEmployee].sort();
+        
+        // Spara uppdaterade godkända månader
+        await saveApprovedMonths(updatedApprovedMonths);
+        
+        if (isMountedRef.current) {
+          setSuccess(`Månad ${selectedMonth} godkänd för vald medarbetare.`);
+          
+          // Rensa meddelande efter några sekunder
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              setSuccess('');
+            }
+          }, 3000);
+        }
+      } else {
+        if (isMountedRef.current) {
+          setError('Denna månad är redan godkänd.');
+          
+          // Rensa felmeddelande efter några sekunder
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              setError('');
+            }
+          }, 3000);
+        }
+      }
+    } catch (err) {
+      console.error('Error approving month:', err);
+      if (isMountedRef.current) {
+        setError('Kunde inte godkänna månaden.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  };
+  
+  // Ta bort godkännande för en månad
+  const handleUnapproveMonth = async () => {
+    if (!selectedEmployee || !selectedMonth) return;
+    
+    setLoading(true);
+    
+    try {
+      // Uppdatera godkända månader
+      const updatedApprovedMonths = {...approvedMonths};
+      
+      if (updatedApprovedMonths[selectedEmployee] && 
+          updatedApprovedMonths[selectedEmployee].includes(selectedMonth)) {
+        
+        // Ta bort månaden från godkända månader
+        updatedApprovedMonths[selectedEmployee] = updatedApprovedMonths[selectedEmployee]
+          .filter(month => month !== selectedMonth);
+        
+        // Spara uppdaterade godkända månader
+        await saveApprovedMonths(updatedApprovedMonths);
+        
+        if (isMountedRef.current) {
+          setSuccess(`Godkännande för månad ${selectedMonth} borttaget.`);
+          
+          // Rensa meddelande efter några sekunder
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              setSuccess('');
+            }
+          }, 3000);
+        }
+      } else {
+        if (isMountedRef.current) {
+          setError('Denna månad är inte godkänd.');
+          
+          // Rensa felmeddelande efter några sekunder
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              setError('');
+            }
+          }, 3000);
+        }
+      }
+    } catch (err) {
+      console.error('Error unapproving month:', err);
+      if (isMountedRef.current) {
+        setError('Kunde inte ta bort godkännande för månaden.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  };
   
   // Ladda statistikdata
   const loadChartData = async () => {
@@ -751,6 +1027,15 @@ const AdminPanel = ({ onLogout }) => {
     return currentDateTime.toLocaleDateString('sv-SE', options);
   };
   
+  // Kontrollera om vald månad är godkänd
+  const isMonthApproved = () => {
+    if (!selectedEmployee || !selectedMonth || !approvedMonths[selectedEmployee]) {
+      return false;
+    }
+    
+    return approvedMonths[selectedEmployee].includes(selectedMonth);
+  };
+  
   return (
     <div className="max-w-6xl mx-auto py-6">
       <div className="flex justify-between items-center mb-6">
@@ -780,6 +1065,14 @@ const AdminPanel = ({ onLogout }) => {
               {pendingEmployees.length}
             </span>
           )}
+        </button>
+        <button
+          onClick={() => setActiveTab('timeEdit')}
+          className={`flex-1 py-3 px-4 text-center transition ${
+            activeTab === 'timeEdit' ? 'bg-blue-500 text-white' : 'bg-white hover:bg-gray-100'
+          }`}
+        >
+          Tidredaktör
         </button>
         <button
           onClick={() => setActiveTab('reports')}
@@ -987,6 +1280,314 @@ const AdminPanel = ({ onLogout }) => {
               )}
             </div>
           </div>
+        </div>
+      )}
+      
+      {/* Time Edit Tab */}
+      {activeTab === 'timeEdit' && (
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h2 className="text-xl font-semibold mb-4">Tidredaktör</h2>
+          <p className="mb-6 text-gray-600">
+            Här kan du se och redigera medarbetares tidsstämplingar samt godkänna månadsrapporter.
+          </p>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+            {/* Dropdown för att välja medarbetare */}
+            <div>
+              <label className="block text-gray-700 mb-2 text-sm font-medium">Medarbetare</label>
+              <select
+                value={selectedEmployee || ''}
+                onChange={(e) => setSelectedEmployee(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md"
+                disabled={loading}
+              >
+                <option value="">Välj medarbetare</option>
+                {employees.map(emp => (
+                  <option key={emp.personnummer} value={emp.personnummer}>
+                    {emp.name || emp.personnummer}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Väljare för månad */}
+            <div>
+              <label className="block text-gray-700 mb-2 text-sm font-medium">Månad</label>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md"
+                disabled={loading}
+              />
+            </div>
+            
+            {/* Status och knappar */}
+            <div className="flex flex-col justify-end">
+              {selectedEmployee && selectedMonth && (
+                <>
+                  <div className="mb-2">
+                    <span className="text-sm font-medium mr-2">Status:</span>
+                    {isMonthApproved() ? (
+                      <span className="bg-green-100 text-green-800 text-xs font-medium py-1 px-2 rounded">
+                        Godkänd
+                      </span>
+                    ) : (
+                      <span className="bg-yellow-100 text-yellow-800 text-xs font-medium py-1 px-2 rounded">
+                        Ej godkänd
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex space-x-2">
+                    {isMonthApproved() ? (
+                      <button
+                        onClick={handleUnapproveMonth}
+                        className="bg-yellow-500 hover:bg-yellow-600 text-white py-2 px-4 rounded-md text-sm"
+                        disabled={loading || timestampsLoading}
+                      >
+                        Ta bort godkännande
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleApproveMonth}
+                        className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md text-sm"
+                        disabled={loading || timestampsLoading}
+                      >
+                        Godkänn månad
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          
+          {/* Tidsstämplingar */}
+          {selectedEmployee && (
+            <>
+              <h3 className="text-lg font-medium mb-3">Tidsstämplingar</h3>
+              
+              {timestampsLoading ? (
+                <div className="flex justify-center items-center h-40">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                </div>
+              ) : timestamps.length === 0 ? (
+                <div className="bg-gray-50 p-6 rounded-lg text-center text-gray-500">
+                  Inga tidsstämplingar hittades för denna period.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Datum
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          In
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Ut
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Rast (min)
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Arbetstid
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Åtgärder
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {timestamps.map(ts => (
+                        <tr key={ts.id} className={isMonthApproved() ? 'bg-green-50' : ''}>
+                          {editingTimestamp && editingTimestamp.id === ts.id ? (
+                            // Redigeringsläge
+                            <>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <input
+                                  type="date"
+                                  value={new Date(editingTimestamp.checkInTime).toISOString().split('T')[0]}
+                                  onChange={(e) => {
+                                    const newDate = e.target.value;
+                                    const oldTime = new Date(editingTimestamp.checkInTime).toTimeString().split(' ')[0];
+                                    const newDateTime = new Date(`${newDate}T${oldTime}`);
+                                    setEditingTimestamp({
+                                      ...editingTimestamp,
+                                      checkInTime: newDateTime.toISOString()
+                                    });
+                                  }}
+                                  className="px-2 py-1 border rounded w-full"
+                                />
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <input
+                                  type="time"
+                                  value={new Date(editingTimestamp.checkInTime).toTimeString().slice(0, 5)}
+                                  onChange={(e) => {
+                                    const oldDate = new Date(editingTimestamp.checkInTime).toISOString().split('T')[0];
+                                    const newTime = e.target.value;
+                                    const newDateTime = new Date(`${oldDate}T${newTime}`);
+                                    setEditingTimestamp({
+                                      ...editingTimestamp,
+                                      checkInTime: newDateTime.toISOString()
+                                    });
+                                  }}
+                                  className="px-2 py-1 border rounded w-full"
+                                />
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <input
+                                  type="time"
+                                  value={editingTimestamp.checkOutTime ? new Date(editingTimestamp.checkOutTime).toTimeString().slice(0, 5) : ''}
+                                  onChange={(e) => {
+                                    const oldDate = new Date(editingTimestamp.checkInTime).toISOString().split('T')[0];
+                                    const newTime = e.target.value;
+                                    const newDateTime = new Date(`${oldDate}T${newTime}`);
+                                    setEditingTimestamp({
+                                      ...editingTimestamp,
+                                      checkOutTime: newTime ? newDateTime.toISOString() : null
+                                    });
+                                  }}
+                                  className="px-2 py-1 border rounded w-full"
+                                />
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <input
+                                  type="number"
+                                  value={editingTimestamp.shiftInfo?.breakDuration || 0}
+                                  onChange={(e) => {
+                                    const newBreakDuration = e.target.value;
+                                    setEditingTimestamp({
+                                      ...editingTimestamp,
+                                      shiftInfo: {
+                                        ...editingTimestamp.shiftInfo || {},
+                                        breakDuration: newBreakDuration
+                                      }
+                                    });
+                                  }}
+                                  min="0"
+                                  className="px-2 py-1 border rounded w-full"
+                                />
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                {editingTimestamp.checkOutTime 
+                                  ? utils.timestampToHours(
+                                     editingTimestamp.checkInTime, 
+                                     editingTimestamp.checkOutTime,
+                                     editingTimestamp.shiftInfo?.breakDuration || 0
+                                   ).toFixed(2) + ' h' 
+                                  : 'Pågående'}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                <div className="flex space-x-2">
+                                  <button
+                                    onClick={handleSaveTimestamp}
+                                    className="text-green-600 hover:text-green-900"
+                                    disabled={loading}
+                                  >
+                                    Spara
+                                  </button>
+                                  <button
+                                    onClick={handleCancelEdit}
+                                    className="text-gray-600 hover:text-gray-900"
+                                    disabled={loading}
+                                  >
+                                    Avbryt
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            // Visningsläge
+                            <>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                {new Date(ts.checkInTime).toLocaleDateString('sv-SE')}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                {new Date(ts.checkInTime).toLocaleTimeString('sv-SE', {hour: '2-digit', minute: '2-digit'})}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                {ts.checkOutTime 
+                                  ? new Date(ts.checkOutTime).toLocaleTimeString('sv-SE', {hour: '2-digit', minute: '2-digit'})
+                                  : 'Pågående'}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                {ts.shiftInfo?.breakDuration || '0'}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                {ts.checkOutTime 
+                                  ? utils.timestampToHours(ts.checkInTime, ts.checkOutTime, ts.shiftInfo?.breakDuration || 0).toFixed(2) + ' h'
+                                  : 'Pågående'}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                <div className="flex space-x-2">
+                                  <button
+                                    onClick={() => handleEditTimestamp(ts)}
+                                    className="text-blue-600 hover:text-blue-900"
+                                    disabled={loading || isMonthApproved()}
+                                  >
+                                    Ändra
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTimestamp(ts.id)}
+                                    className="text-red-600 hover:text-red-900"
+                                    disabled={loading || isMonthApproved()}
+                                  >
+                                    Radera
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              
+              {/* Summering */}
+              {timestamps.length > 0 && (
+                <div className="mt-4 bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-medium mb-2">Summering</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    <div>
+                      <span className="text-sm text-gray-500">Antal pass:</span>
+                      <p className="font-medium">{timestamps.length}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-gray-500">Total arbetstid:</span>
+                      <p className="font-medium">
+                        {timestamps.reduce((sum, ts) => {
+                          if (ts.checkOutTime) {
+                            return sum + utils.timestampToHours(
+                              ts.checkInTime, 
+                              ts.checkOutTime, 
+                              ts.shiftInfo?.breakDuration || 0
+                            );
+                          }
+                          return sum;
+                        }, 0).toFixed(2)} timmar
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-gray-500">Status:</span>
+                      <p className="font-medium">
+                        {isMonthApproved() ? (
+                          <span className="text-green-600">Godkänd</span>
+                        ) : (
+                          <span className="text-yellow-600">Ej godkänd</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
       

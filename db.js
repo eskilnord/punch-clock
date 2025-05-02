@@ -471,8 +471,106 @@ const dbService = {
     });
     
     return Promise.all(promises);
+  },
+  
+  // Delete a timestamp by ID
+  deleteTimestamp: (id) => {
+    return new Promise((resolve, reject) => {
+      console.log("Deleting timestamp with ID:", id);
+      
+      if (!id) {
+        reject(new Error('ID är obligatoriskt för att radera en tidsstämpling'));
+        return;
+      }
+      
+      const db = dbService.db;
+      
+      if (!db) {
+        reject(new Error('Databasen är inte initierad'));
+        return;
+      }
+      
+      const transaction = db.transaction(['timestamps'], 'readwrite');
+      const store = transaction.objectStore('timestamps');
+      
+      try {
+        const request = store.delete(id);
+        
+        request.onsuccess = (event) => {
+          console.log("Timestamp deleted successfully:", id);
+          resolve();
+        };
+        
+        request.onerror = (event) => {
+          console.error("Error deleting timestamp:", event.target.error);
+          reject(event.target.error);
+        };
+        
+        transaction.oncomplete = () => {
+          console.log("Transaction completed for deleting timestamp");
+        };
+        
+        transaction.onerror = (event) => {
+          console.error("Transaction error when deleting timestamp:", event.target.error);
+          reject(event.target.error);
+        };
+      } catch (error) {
+        console.error("Exception when deleting timestamp:", error);
+        reject(error);
+      }
+    });
   }
 };
 
 // Export the service
-window.dbService = dbService; 
+window.dbService = dbService;
+
+// Check if we need to add the getAllTimestamps function
+if (!dbService.getAllTimestamps) {
+  /**
+   * Hämta alla tidsstämplingar i databasen
+   * @returns {Promise<Array>} - En array med alla tidsstämplingar
+   */
+  dbService.getAllTimestamps = () => {
+    return new Promise((resolve, reject) => {
+      console.log("Getting all timestamps");
+      
+      const db = dbService.db;
+      
+      if (!db) {
+        reject(new Error('Databasen är inte initierad'));
+        return;
+      }
+      
+      const transaction = db.transaction(['timestamps'], 'readonly');
+      const store = transaction.objectStore('timestamps');
+      
+      try {
+        const request = store.getAll();
+        
+        request.onsuccess = (event) => {
+          const timestamps = event.target.result || [];
+          console.log(`Found ${timestamps.length} timestamps`);
+          resolve(timestamps);
+        };
+        
+        request.onerror = (event) => {
+          console.error("Error getting all timestamps:", event.target.error);
+          reject(event.target.error);
+        };
+        
+        transaction.oncomplete = () => {
+          console.log("Transaction completed for getting all timestamps");
+        };
+        
+        transaction.onerror = (event) => {
+          console.error("Transaction error when getting all timestamps:", event.target.error);
+          reject(event.target.error);
+        };
+      } catch (error) {
+        console.error("Exception when getting all timestamps:", error);
+        reject(error);
+      }
+    });
+  };
+} 
