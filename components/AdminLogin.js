@@ -119,11 +119,21 @@ const AdminLogin = ({ onLogin }) => {
 
 // Initial PIN setup component
 const InitialSetup = ({ onComplete }) => {
+  // Spåra om komponenten är monterad
+  const isMountedRef = React.useRef(true);
+  
   const [pin, setPin] = React.useState('');
   const [confirmPin, setConfirmPin] = React.useState('');
   const [companyName, setCompanyName] = React.useState('');
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  
+  // Sätt isMountedRef till false när komponenten avmonteras
+  React.useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   
   // Handle pin change
   const handlePinChange = (e, field) => {
@@ -163,12 +173,18 @@ const InitialSetup = ({ onComplete }) => {
         await dbService.saveConfig('companyName', companyName.trim());
       }
       
-      onComplete();
+      if (isMountedRef.current) {
+        onComplete();
+      }
     } catch (err) {
       console.error(err);
-      setError('Ett fel uppstod. Försök igen.');
+      if (isMountedRef.current) {
+        setError('Ett fel uppstod. Försök igen.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
   

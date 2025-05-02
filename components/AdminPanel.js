@@ -1,5 +1,8 @@
 // Admin Panel Component
 const AdminPanel = ({ onLogout }) => {
+  // Spåra om komponenten är monterad
+  const isMountedRef = React.useRef(true);
+  
   const [employees, setEmployees] = React.useState([]);
   const [pendingEmployees, setPendingEmployees] = React.useState([]);
   const [newEmployee, setNewEmployee] = React.useState({ personnummer: '', name: '' });
@@ -19,27 +22,23 @@ const AdminPanel = ({ onLogout }) => {
   const [showNumpad, setShowNumpad] = React.useState(true);
   const [requireShiftInfo, setRequireShiftInfo] = React.useState(false);
   
+  // Sätt isMountedRef till false när komponenten avmonteras
+  React.useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  
   // Update current date and time every minute
   React.useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentDateTime(new Date());
+      if (isMountedRef.current) {
+        setCurrentDateTime(new Date());
+      }
     }, 60000); // Update every 60 seconds
     
     return () => clearInterval(timer);
   }, []);
-  
-  // Format current date and time
-  const formatDateTime = () => {
-    const options = { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    };
-    return currentDateTime.toLocaleDateString('sv-SE', options);
-  };
   
   // Load employees and settings on mount
   React.useEffect(() => {
@@ -53,7 +52,10 @@ const AdminPanel = ({ onLogout }) => {
       console.log("Loading settings...");
       const requireShift = await dbService.getConfig('requireShiftInfo');
       console.log("Loaded requireShiftInfo:", requireShift);
-      setRequireShiftInfo(requireShift === 'true');
+      
+      if (isMountedRef.current) {
+        setRequireShiftInfo(requireShift === 'true');
+      }
     } catch (err) {
       console.error('Error loading settings:', err);
     }
@@ -66,16 +68,27 @@ const AdminPanel = ({ onLogout }) => {
       const newValue = !requireShiftInfo;
       console.log("Saving requireShiftInfo:", newValue.toString());
       await dbService.saveConfig('requireShiftInfo', newValue.toString());
-      setRequireShiftInfo(newValue);
-      setSuccess(`Arbetspass-inmatning ${newValue ? 'aktiverad' : 'inaktiverad'}`);
       
-      // Clear success message after 3 seconds
-      setTimeout(() => setSuccess(''), 3000);
+      if (isMountedRef.current) {
+        setRequireShiftInfo(newValue);
+        setSuccess(`Arbetspass-inmatning ${newValue ? 'aktiverad' : 'inaktiverad'}`);
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setSuccess('');
+          }
+        }, 3000);
+      }
     } catch (err) {
       console.error(err);
-      setError('Ett fel uppstod vid sparande av inställningar.');
+      if (isMountedRef.current) {
+        setError('Ett fel uppstod vid sparande av inställningar.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
   
@@ -131,9 +144,13 @@ const AdminPanel = ({ onLogout }) => {
   
   // Load all employees from database
   const loadEmployees = async () => {
+    if (!isMountedRef.current) return;
+    
     setLoading(true);
     try {
       const allEmployees = await dbService.getAllEmployees();
+      
+      if (!isMountedRef.current) return;
       
       // Separera godkända och ej godkända medarbetare
       const approved = allEmployees.filter(emp => emp.approved !== false);
@@ -143,9 +160,13 @@ const AdminPanel = ({ onLogout }) => {
       setPendingEmployees(pending);
     } catch (err) {
       console.error(err);
-      setError('Kunde inte ladda medarbetare.');
+      if (isMountedRef.current) {
+        setError('Kunde inte ladda medarbetare.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
   
@@ -166,6 +187,9 @@ const AdminPanel = ({ onLogout }) => {
     try {
       // Check if employee already exists
       const existing = await dbService.getEmployee(normalizedPnr);
+      
+      if (!isMountedRef.current) return;
+      
       if (existing) {
         setError('En medarbetare med detta personnummer finns redan.');
         setLoading(false);
@@ -179,19 +203,32 @@ const AdminPanel = ({ onLogout }) => {
         approved: true // godkänn direkt när admin lägger till
       });
       
+      if (!isMountedRef.current) return;
+      
       // Reset form and reload employees
       setNewEmployee({ personnummer: '', name: '' });
       setNormalizedPersonnummer('');
       await loadEmployees();
+      
+      if (!isMountedRef.current) return;
+      
       setSuccess('Medarbetare tillagd!');
       
       // Clear success message after 3 seconds
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setSuccess('');
+        }
+      }, 3000);
     } catch (err) {
       console.error(err);
-      setError('Ett fel uppstod vid tillägg av medarbetare.');
+      if (isMountedRef.current) {
+        setError('Ett fel uppstod vid tillägg av medarbetare.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
   
@@ -250,16 +287,30 @@ const AdminPanel = ({ onLogout }) => {
       
       try {
         await dbService.deleteEmployee(personnummer);
+        
+        if (!isMountedRef.current) return;
+        
         await loadEmployees();
+        
+        if (!isMountedRef.current) return;
+        
         setSuccess('Medarbetare borttagen!');
         
         // Clear success message after 3 seconds
-        setTimeout(() => setSuccess(''), 3000);
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setSuccess('');
+          }
+        }, 3000);
       } catch (err) {
         console.error(err);
-        setError('Ett fel uppstod vid borttagning av medarbetare.');
+        if (isMountedRef.current) {
+          setError('Ett fel uppstod vid borttagning av medarbetare.');
+        }
       } finally {
-        setLoading(false);
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
       }
     }
   };
@@ -272,22 +323,37 @@ const AdminPanel = ({ onLogout }) => {
       // Hämta medarbetaren först
       const employee = await dbService.getEmployee(personnummer);
       
+      if (!isMountedRef.current) return;
+      
       // Uppdatera med approved=true
       await dbService.saveEmployee({
         ...employee,
         approved: true
       });
       
+      if (!isMountedRef.current) return;
+      
       await loadEmployees();
+      
+      if (!isMountedRef.current) return;
+      
       setSuccess('Medarbetare godkänd!');
       
       // Clear success message after 3 seconds
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setSuccess('');
+        }
+      }, 3000);
     } catch (err) {
       console.error(err);
-      setError('Ett fel uppstod vid godkännande av medarbetare.');
+      if (isMountedRef.current) {
+        setError('Ett fel uppstod vid godkännande av medarbetare.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
   
@@ -297,15 +363,26 @@ const AdminPanel = ({ onLogout }) => {
     
     try {
       const filename = await utils.generateAttendanceReport();
+      
+      if (!isMountedRef.current) return;
+      
       setSuccess(`Rapporten har genererats och laddats ner: ${filename}`);
       
-      // Clear success message after 3 seconds
-      setTimeout(() => setSuccess(''), 5000);
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setSuccess('');
+        }
+      }, 5000);
     } catch (err) {
       console.error(err);
-      setError('Ett fel uppstod vid generering av rapport.');
+      if (isMountedRef.current) {
+        setError('Ett fel uppstod vid generering av rapport.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
   
@@ -327,15 +404,26 @@ const AdminPanel = ({ onLogout }) => {
     
     try {
       const filename = await utils.generateWorkHoursSummary(reportStartDate, reportEndDate);
+      
+      if (!isMountedRef.current) return;
+      
       setSuccess(`Rapporten har genererats och laddats ner: ${filename}`);
       
-      // Clear success message after 3 seconds
-      setTimeout(() => setSuccess(''), 5000);
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          setSuccess('');
+        }
+      }, 5000);
     } catch (err) {
       console.error(err);
-      setError('Ett fel uppstod vid generering av rapport.');
+      if (isMountedRef.current) {
+        setError('Ett fel uppstod vid generering av rapport.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
   
@@ -350,17 +438,37 @@ const AdminPanel = ({ onLogout }) => {
     
     try {
       await dbService.clearAllData();
+      
+      if (!isMountedRef.current) return;
+      
       setSuccess('All data har rensats. Du kommer att loggas ut...');
       
       // Logout after 2 seconds
       setTimeout(onLogout, 2000);
     } catch (err) {
       console.error(err);
-      setError('Ett fel uppstod vid rensning av data.');
-      setConfirmClear(false);
+      if (isMountedRef.current) {
+        setError('Ett fel uppstod vid rensning av data.');
+        setConfirmClear(false);
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
+  };
+  
+  // Format current date and time
+  const formatDateTime = () => {
+    const options = { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    };
+    return currentDateTime.toLocaleDateString('sv-SE', options);
   };
   
   return (
