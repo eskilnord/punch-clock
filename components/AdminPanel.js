@@ -493,7 +493,12 @@ const AdminPanel = ({ onLogout }) => {
   
   // Rendera grafer
   const renderCharts = () => {
-    if (!chartData) return;
+    if (!chartData) {
+      console.error("Kan inte rendera grafer: chartData är null");
+      return;
+    }
+    
+    console.log("Rendering charts with data:", chartData);
     
     // Skapa färgpaletter
     const blueGradient = {
@@ -513,201 +518,269 @@ const AdminPanel = ({ onLogout }) => {
       borderColor: 'rgba(255, 159, 64, 1)',
       borderWidth: 1
     };
-    
-    // 1. Aktivitet per timme
-    if (hourlyActivityChartRef.current) {
-      // Förstör befintlig graf om den finns
-      if (chartsCreated.current.hourlyActivity) {
-        chartsCreated.current.hourlyActivity.destroy();
-      }
-      
-      const ctx = hourlyActivityChartRef.current.getContext('2d');
-      chartsCreated.current.hourlyActivity = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: chartData.hourlyActivity.labels,
-          datasets: [{
-            label: 'Antal stämplingar',
-            data: chartData.hourlyActivity.data,
-            ...blueGradient
-          }]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            title: {
-              display: true,
-              text: 'Aktivitet under dygnet'
-            },
-            legend: {
-              display: false
-            }
-          },
-          scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'Timme'
+
+    try {
+      // 1. Aktivitet per timme
+      if (hourlyActivityChartRef.current) {
+        console.log("Rendering hourly activity chart");
+        // Förstör befintlig graf om den finns
+        if (chartsCreated.current.hourlyActivity) {
+          console.log("Destroying old hourly activity chart");
+          chartsCreated.current.hourlyActivity.destroy();
+          chartsCreated.current.hourlyActivity = null;
+        }
+        
+        if (!chartData.hourlyActivity || !Array.isArray(chartData.hourlyActivity.data)) {
+          console.error("Hourly activity data is missing or invalid:", chartData.hourlyActivity);
+        } else {
+          const ctx = hourlyActivityChartRef.current.getContext('2d');
+          if (!ctx) {
+            console.error("Failed to get 2D context for hourly activity chart");
+          } else {
+            console.log("Creating hourly activity chart with data:", chartData.hourlyActivity);
+            chartsCreated.current.hourlyActivity = new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: chartData.hourlyActivity.labels,
+                datasets: [{
+                  label: 'Antal stämplingar',
+                  data: chartData.hourlyActivity.data,
+                  ...blueGradient
+                }]
+              },
+              options: {
+                responsive: true,
+                plugins: {
+                  title: {
+                    display: true,
+                    text: 'Aktivitet under dygnet'
+                  },
+                  legend: {
+                    display: false
+                  }
+                },
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: 'Timme'
+                    }
+                  },
+                  y: {
+                    beginAtZero: true,
+                    title: {
+                      display: true,
+                      text: 'Antal stämplingar'
+                    }
+                  }
+                }
               }
-            },
-            y: {
-              beginAtZero: true,
-              title: {
-                display: true,
-                text: 'Antal stämplingar'
-              }
-            }
+            });
+            console.log("Hourly activity chart created successfully");
           }
         }
-      });
-    }
-    
-    // 2. Aktiva medarbetare per dag
-    if (employeeActivityChartRef.current && chartData.employeeActivity.labels.length > 0) {
-      // Förstör befintlig graf om den finns
-      if (chartsCreated.current.employeeActivity) {
-        chartsCreated.current.employeeActivity.destroy();
+      } else {
+        console.error("Hourly activity chart reference is missing");
       }
       
-      const ctx = employeeActivityChartRef.current.getContext('2d');
-      chartsCreated.current.employeeActivity = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: chartData.employeeActivity.labels,
-          datasets: [{
-            label: 'Aktiva medarbetare',
-            data: chartData.employeeActivity.data,
-            ...greenGradient,
-            tension: 0.3,
-            fill: true
-          }]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            title: {
-              display: true,
-              text: 'Aktiva medarbetare per dag'
-            }
-          },
-          scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'Datum'
+      // 2. Aktiva medarbetare per dag
+      if (employeeActivityChartRef.current) {
+        console.log("Rendering employee activity chart");
+        // Kontrollera om det finns data att visa
+        if (!chartData.employeeActivity || !chartData.employeeActivity.labels || chartData.employeeActivity.labels.length === 0) {
+          console.error("Employee activity data is missing or empty:", chartData.employeeActivity);
+        } else {
+          // Förstör befintlig graf om den finns
+          if (chartsCreated.current.employeeActivity) {
+            console.log("Destroying old employee activity chart");
+            chartsCreated.current.employeeActivity.destroy();
+            chartsCreated.current.employeeActivity = null;
+          }
+          
+          const ctx = employeeActivityChartRef.current.getContext('2d');
+          if (!ctx) {
+            console.error("Failed to get 2D context for employee activity chart");
+          } else {
+            console.log("Creating employee activity chart with data:", chartData.employeeActivity);
+            chartsCreated.current.employeeActivity = new Chart(ctx, {
+              type: 'line',
+              data: {
+                labels: chartData.employeeActivity.labels,
+                datasets: [{
+                  label: 'Aktiva medarbetare',
+                  data: chartData.employeeActivity.data,
+                  ...greenGradient,
+                  tension: 0.3,
+                  fill: true
+                }]
+              },
+              options: {
+                responsive: true,
+                plugins: {
+                  title: {
+                    display: true,
+                    text: 'Aktiva medarbetare per dag'
+                  }
+                },
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: 'Datum'
+                    }
+                  },
+                  y: {
+                    beginAtZero: true,
+                    title: {
+                      display: true,
+                      text: 'Antal medarbetare'
+                    }
+                  }
+                }
               }
-            },
-            y: {
-              beginAtZero: true,
-              title: {
-                display: true,
-                text: 'Antal medarbetare'
-              }
-            }
+            });
+            console.log("Employee activity chart created successfully");
           }
         }
-      });
-    }
-    
-    // 3. Arbetad tid per medarbetare
-    if (workedHoursChartRef.current && chartData.workedHours.labels.length > 0) {
-      // Förstör befintlig graf om den finns
-      if (chartsCreated.current.workedHours) {
-        chartsCreated.current.workedHours.destroy();
+      } else {
+        console.error("Employee activity chart reference is missing");
       }
       
-      const ctx = workedHoursChartRef.current.getContext('2d');
-      chartsCreated.current.workedHours = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: chartData.workedHours.labels,
-          datasets: [{
-            label: 'Arbetad tid (timmar)',
-            data: chartData.workedHours.data,
-            ...orangeGradient
-          }]
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true,
-          plugins: {
-            title: {
-              display: true,
-              text: 'Total arbetad tid per person'
-            }
-          },
-          scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'Timmar'
+      // 3. Arbetad tid per medarbetare
+      if (workedHoursChartRef.current) {
+        console.log("Rendering worked hours chart");
+        // Kontrollera om det finns data att visa
+        if (!chartData.workedHours || !chartData.workedHours.labels || chartData.workedHours.labels.length === 0) {
+          console.error("Worked hours data is missing or empty:", chartData.workedHours);
+        } else {
+          // Förstör befintlig graf om den finns
+          if (chartsCreated.current.workedHours) {
+            console.log("Destroying old worked hours chart");
+            chartsCreated.current.workedHours.destroy();
+            chartsCreated.current.workedHours = null;
+          }
+          
+          const ctx = workedHoursChartRef.current.getContext('2d');
+          if (!ctx) {
+            console.error("Failed to get 2D context for worked hours chart");
+          } else {
+            console.log("Creating worked hours chart with data:", chartData.workedHours);
+            chartsCreated.current.workedHours = new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: chartData.workedHours.labels,
+                datasets: [{
+                  label: 'Arbetad tid (timmar)',
+                  data: chartData.workedHours.data,
+                  ...orangeGradient
+                }]
+              },
+              options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: {
+                  title: {
+                    display: true,
+                    text: 'Total arbetad tid per person'
+                  }
+                },
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: 'Timmar'
+                    }
+                  },
+                  y: {
+                    title: {
+                      display: true,
+                      text: 'Medarbetare'
+                    }
+                  }
+                }
               }
-            },
-            y: {
-              title: {
-                display: true,
-                text: 'Medarbetare'
-              }
-            }
+            });
+            console.log("Worked hours chart created successfully");
           }
         }
-      });
-    }
-    
-    // 4. Schemalagd vs faktisk tid
-    if (scheduledVsActualChartRef.current && chartData.scheduledVsActual.labels.length > 0) {
-      // Förstör befintlig graf om den finns
-      if (chartsCreated.current.scheduledVsActual) {
-        chartsCreated.current.scheduledVsActual.destroy();
+      } else {
+        console.error("Worked hours chart reference is missing");
       }
       
-      const ctx = scheduledVsActualChartRef.current.getContext('2d');
-      chartsCreated.current.scheduledVsActual = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: chartData.scheduledVsActual.labels,
-          datasets: [
-            {
-              label: 'Schemalagd tid',
-              data: chartData.scheduledVsActual.scheduled,
-              backgroundColor: 'rgba(66, 135, 245, 0.6)',
-              borderColor: 'rgba(66, 135, 245, 1)',
-              borderWidth: 1
-            },
-            {
-              label: 'Faktisk tid',
-              data: chartData.scheduledVsActual.actual,
-              backgroundColor: 'rgba(75, 192, 192, 0.6)',
-              borderColor: 'rgba(75, 192, 192, 1)',
-              borderWidth: 1
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            title: {
-              display: true,
-              text: 'Schemalagd vs faktisk tid'
-            }
-          },
-          scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'Datum'
+      // 4. Schemalagd vs faktisk tid
+      if (scheduledVsActualChartRef.current) {
+        console.log("Rendering scheduled vs actual chart");
+        // Kontrollera om det finns data att visa
+        if (!chartData.scheduledVsActual || !chartData.scheduledVsActual.labels || chartData.scheduledVsActual.labels.length === 0) {
+          console.error("Scheduled vs actual data is missing or empty:", chartData.scheduledVsActual);
+        } else {
+          // Förstör befintlig graf om den finns
+          if (chartsCreated.current.scheduledVsActual) {
+            console.log("Destroying old scheduled vs actual chart");
+            chartsCreated.current.scheduledVsActual.destroy();
+            chartsCreated.current.scheduledVsActual = null;
+          }
+          
+          const ctx = scheduledVsActualChartRef.current.getContext('2d');
+          if (!ctx) {
+            console.error("Failed to get 2D context for scheduled vs actual chart");
+          } else {
+            console.log("Creating scheduled vs actual chart with data:", chartData.scheduledVsActual);
+            chartsCreated.current.scheduledVsActual = new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: chartData.scheduledVsActual.labels,
+                datasets: [
+                  {
+                    label: 'Schemalagd tid',
+                    data: chartData.scheduledVsActual.scheduled,
+                    backgroundColor: 'rgba(66, 135, 245, 0.6)',
+                    borderColor: 'rgba(66, 135, 245, 1)',
+                    borderWidth: 1
+                  },
+                  {
+                    label: 'Faktisk tid',
+                    data: chartData.scheduledVsActual.actual,
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                  }
+                ]
+              },
+              options: {
+                responsive: true,
+                plugins: {
+                  title: {
+                    display: true,
+                    text: 'Schemalagd vs faktisk tid'
+                  }
+                },
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: 'Datum'
+                    }
+                  },
+                  y: {
+                    beginAtZero: true,
+                    title: {
+                      display: true,
+                      text: 'Timmar'
+                    }
+                  }
+                }
               }
-            },
-            y: {
-              beginAtZero: true,
-              title: {
-                display: true,
-                text: 'Timmar'
-              }
-            }
+            });
+            console.log("Scheduled vs actual chart created successfully");
           }
         }
-      });
+      } else {
+        console.error("Scheduled vs actual chart reference is missing");
+      }
+    } catch (error) {
+      console.error("Error while rendering charts:", error);
+      setError("Ett fel uppstod vid rendering av grafer: " + error.message);
     }
   };
   
