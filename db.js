@@ -2,7 +2,7 @@
 
 // Database name and version
 const DB_NAME = 'stempelklocka';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 // Initialize the database
 const initDB = () => {
@@ -20,9 +20,11 @@ const initDB = () => {
     // Create object stores if this is a new database or a version upgrade
     request.onupgradeneeded = event => {
       const db = event.target.result;
+      console.log("Database upgrade needed from version", event.oldVersion, "to", event.newVersion);
       
       // Store for employees
       if (!db.objectStoreNames.contains('employees')) {
+        console.log("Creating employees store");
         const employeeStore = db.createObjectStore('employees', { keyPath: 'personnummer' });
         employeeStore.createIndex('approved', 'approved', { unique: false });
         employeeStore.createIndex('name', 'name', { unique: false });
@@ -30,20 +32,26 @@ const initDB = () => {
       
       // Store for timestamps
       if (!db.objectStoreNames.contains('timestamps')) {
+        console.log("Creating timestamps store");
         const timestampStore = db.createObjectStore('timestamps', { keyPath: 'id', autoIncrement: true });
         timestampStore.createIndex('personnummer', 'personnummer', { unique: false });
         timestampStore.createIndex('checkInTime', 'checkInTime', { unique: false });
         timestampStore.createIndex('checkOutTime', 'checkOutTime', { unique: false });
         timestampStore.createIndex('byPersonnummerAndTime', ['personnummer', 'checkInTime'], { unique: false });
-      } else {
-        const timestampStore = event.currentTarget.transaction.objectStore('timestamps');
-        if (!timestampStore.indexNames.contains('byPersonnummerAndTime')) {
-          timestampStore.createIndex('byPersonnummerAndTime', ['personnummer', 'checkInTime'], { unique: false });
-        }
+      } else if (event.oldVersion < 3) {
+        // If upgrading from pre-v3, delete and recreate timestamps store
+        console.log("Recreating timestamps store");
+        db.deleteObjectStore('timestamps');
+        const timestampStore = db.createObjectStore('timestamps', { keyPath: 'id', autoIncrement: true });
+        timestampStore.createIndex('personnummer', 'personnummer', { unique: false });
+        timestampStore.createIndex('checkInTime', 'checkInTime', { unique: false });
+        timestampStore.createIndex('checkOutTime', 'checkOutTime', { unique: false });
+        timestampStore.createIndex('byPersonnummerAndTime', ['personnummer', 'checkInTime'], { unique: false });
       }
       
       // Store for configurations
       if (!db.objectStoreNames.contains('config')) {
+        console.log("Creating config store");
         const configStore = db.createObjectStore('config', { keyPath: 'key' });
         configStore.createIndex('value', 'value', { unique: false });
       }
@@ -79,22 +87,44 @@ const dbService = {
   getConfig: async (key) => {
     const db = await initDB();
     
+    console.log(`Getting config for key: ${key}`);
+    
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['config'], 'readonly');
-      const store = transaction.objectStore('config');
-      
-      const request = store.get(key);
-      
-      request.onsuccess = event => {
-        const result = event.target.result;
-        console.log(`Config retrieved: ${key} =`, result);
-        // Return only the value, not the whole object
-        resolve(result ? result.value : null);
-      };
-      
-      request.onerror = event => {
-        reject(`Error getting config: ${event.target.error}`);
-      };
+      try {
+        const transaction = db.transaction(['config'], 'readonly');
+        const store = transaction.objectStore('config');
+        
+        const request = store.get(key);
+        
+        request.onsuccess = event => {
+          const result = event.target.result;
+          console.log(`Config retrieved for ${key}:`, result);
+          
+          if (!result) {
+            console.log(`No config found for key: ${key}`);
+            resolve(null);
+            return;
+          }
+          
+          // Ensure we only return the value, not the object
+          if (typeof result === 'object' && result.value !== undefined) {
+            console.log(`Returning value: ${result.value}`);
+            resolve(result.value);
+          } else {
+            console.log(`Config is not in expected format, returning:`, result);
+            // Fallback - return the object itself if it's not in expected format
+            resolve(result);
+          }
+        };
+        
+        request.onerror = event => {
+          console.error(`Error getting config for ${key}:`, event.target.error);
+          reject(`Error getting config: ${event.target.error}`);
+        };
+      } catch (err) {
+        console.error(`Error in getConfig for ${key}:`, err);
+        reject(`Error in getConfig: ${err.message}`);
+      }
     });
   },
   
@@ -211,6 +241,8 @@ const dbService = {
     // If extraData is provided, merge it with the timestamp object
     const fullTimestamp = extraData ? { ...timestamp, ...extraData } : timestamp;
     
+    console.log("Saving timestamp:", fullTimestamp);
+    
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(['timestamps'], 'readwrite');
       const store = transaction.objectStore('timestamps');
@@ -218,11 +250,22 @@ const dbService = {
       const request = store.put(fullTimestamp);
       
       request.onsuccess = event => {
-        resolve({ ...fullTimestamp, id: event.target.result });
+        const id = event.target.result;
+        console.log(`Timestamp saved with ID: ${id}`);
+        resolve({ ...fullTimestamp, id: id });
       };
       
       request.onerror = event => {
+        console.error(`Error saving timestamp:`, event.target.error);
         reject(`Error saving timestamp: ${event.target.error}`);
+      };
+      
+      transaction.oncomplete = () => {
+        console.log("Timestamp transaction completed");
+      };
+      
+      transaction.onerror = (event) => {
+        console.error("Timestamp transaction error:", event.target.error);
       };
     });
   },
@@ -318,33 +361,85 @@ const dbService = {
   getLatestTimestampByPersonnummer: async (personnummer) => {
     const db = await initDB();
     
+    console.log(`Getting latest timestamp for personnummer: ${personnummer}`);
+    
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['timestamps'], 'readonly');
-      const store = transaction.objectStore('timestamps');
-      const index = store.index('byPersonnummerAndTime');
-      
-      // Använd IDBKeyRange för att hitta alla tidsstämplar för medarbetaren
-      const range = IDBKeyRange.bound(
-        [personnummer, 0],     // Lägsta värdet
-        [personnummer, Date.now()]  // Högsta värdet
-      );
-      
-      // Använd openCursor med prev för att få den senaste först
-      const request = index.openCursor(range, 'prev');
-      
-      request.onsuccess = event => {
-        const cursor = event.target.result;
-        if (cursor) {
-          // Första träffen är den senaste tidsstämpeln
-          resolve(cursor.value);
+      try {
+        const transaction = db.transaction(['timestamps'], 'readonly');
+        const store = transaction.objectStore('timestamps');
+        
+        // Först försöker vi med index
+        if (store.indexNames.contains('byPersonnummerAndTime')) {
+          console.log("Using byPersonnummerAndTime index");
+          const index = store.index('byPersonnummerAndTime');
+          
+          // Använd IDBKeyRange för att hitta alla tidsstämplar för medarbetaren
+          const range = IDBKeyRange.bound(
+            [personnummer, 0],     // Lägsta värdet
+            [personnummer, Date.now()]  // Högsta värdet
+          );
+          
+          // Använd openCursor med prev för att få den senaste först
+          const request = index.openCursor(range, 'prev');
+          
+          request.onsuccess = event => {
+            const cursor = event.target.result;
+            if (cursor) {
+              // Första träffen är den senaste tidsstämpeln
+              console.log("Found latest timestamp with index:", cursor.value);
+              resolve(cursor.value);
+            } else {
+              console.log("No timestamps found for personnummer:", personnummer);
+              resolve(null);
+            }
+          };
+          
+          request.onerror = event => {
+            console.error("Error using index:", event.target.error);
+            // Fallback till personnummer index
+            fallbackToPersonnummerIndex();
+          };
+          
         } else {
-          resolve(null);
+          console.log("byPersonnummerAndTime index not found, falling back");
+          fallbackToPersonnummerIndex();
         }
-      };
-      
-      request.onerror = event => {
-        reject(`Error getting latest timestamp by personnummer: ${event.target.error}`);
-      };
+        
+        // Fallback-funktion om primärindex inte fungerar
+        function fallbackToPersonnummerIndex() {
+          console.log("Falling back to personnummer index");
+          try {
+            const index = store.index('personnummer');
+            const request = index.getAll(IDBKeyRange.only(personnummer));
+            
+            request.onsuccess = event => {
+              const timestamps = event.target.result;
+              if (timestamps.length === 0) {
+                console.log("No timestamps found for personnummer (fallback):", personnummer);
+                resolve(null);
+                return;
+              }
+              
+              // Sort by time, latest first
+              timestamps.sort((a, b) => new Date(b.checkInTime) - new Date(a.checkInTime));
+              console.log("Found latest timestamp with fallback:", timestamps[0]);
+              resolve(timestamps[0]);
+            };
+            
+            request.onerror = event => {
+              console.error("Error in fallback method:", event.target.error);
+              reject(`Error getting latest timestamp by personnummer (fallback): ${event.target.error}`);
+            };
+          } catch (err) {
+            console.error("Error in fallback function:", err);
+            reject(`Internal error in fallback function: ${err.message}`);
+          }
+        }
+        
+      } catch (err) {
+        console.error("Error in getLatestTimestampByPersonnummer:", err);
+        reject(`Error getting latest timestamp by personnummer: ${err.message}`);
+      }
     });
   },
   

@@ -65,9 +65,20 @@ const EmployeeForm = ({ onLogout }) => {
   const loadSettings = async () => {
     try {
       console.log("Loading shift settings from database...");
-      const requireShift = await dbService.getConfig('requireShiftInfo');
+      let requireShift = await dbService.getConfig('requireShiftInfo');
       console.log("Loaded requireShiftInfo:", requireShift);
-      const shouldRequireShift = requireShift === 'true';
+      
+      // Hantera olika format på värdet
+      let shouldRequireShift = false;
+      
+      if (requireShift === 'true' || requireShift === true) {
+        shouldRequireShift = true;
+      } else if (requireShift && typeof requireShift === 'object' && requireShift.value) {
+        // Om det fortfarande är ett objekt, försök hämta .value
+        shouldRequireShift = requireShift.value === 'true' || requireShift.value === true;
+      }
+      
+      console.log("Final requireShiftInfo value:", shouldRequireShift);
       
       if (isMountedRef.current) {
         setRequireShiftInfo(shouldRequireShift);
