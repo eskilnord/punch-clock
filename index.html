@@ -56,7 +56,21 @@
   <!-- Main App Script -->
   <script type="text/babel" src="app.js"></script>
   
-  <!-- Initialize the application - Simplified to avoid timing issues -->
+  <!-- Diagnostic script to check service availability -->
+  <script type="text/babel">
+    console.log("Diagnostic check:", {
+      ReactExists: typeof React !== 'undefined',
+      ReactDOMExists: typeof ReactDOM !== 'undefined',
+      dbServiceExists: typeof dbService !== 'undefined',
+      utilsExists: typeof utils !== 'undefined',
+      EmployeeFormExists: typeof EmployeeForm !== 'undefined',
+      AdminLoginExists: typeof AdminLogin !== 'undefined',
+      AdminPanelExists: typeof AdminPanel !== 'undefined',
+      AppExists: typeof App !== 'undefined',
+    });
+  </script>
+  
+  <!-- Initialize the application - Simplified approach -->
   <script type="text/babel">
     console.log("Starting initialization script...");
     
@@ -142,30 +156,50 @@
       };
     }
     
-    // Wait for scripts to be fully parsed
-    window.addEventListener('load', () => {
-      console.log("Window loaded, waiting 100ms to ensure Babel transpilation completes...");
-      setTimeout(() => {
-        try {
-          console.log("Rendering App to #root element...");
-          console.log("Root element exists:", !!document.getElementById('root'));
-          console.log("App component exists:", typeof App !== 'undefined');
-          console.log("ReactDOM exists:", typeof ReactDOM !== 'undefined');
-          
-          ReactDOM.render(React.createElement(App), document.getElementById('root'));
-          console.log("App rendered successfully");
-        } catch (error) {
-          console.error("Error rendering application:", error);
-          document.getElementById('root').innerHTML = `
-            <div class="bg-red-100 p-6 rounded-lg shadow-md max-w-md mx-auto text-center text-red-700">
-              <h2 class="text-xl font-bold mb-2">Ett fel uppstod vid rendering</h2>
-              <p>${error.message}</p>
-              <p class="mt-4">Pröva att ladda om sidan eller kontrollera konsolloggen för mer information.</p>
+    // Direct initialization with timeouts for more reliable loading
+    setTimeout(function() {
+      try {
+        console.log("Rendering temporary loading state...");
+        
+        // First render a loading indicator to ensure something is displayed
+        ReactDOM.render(
+          <div className="flex items-center justify-center min-h-screen">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Initierar applikation...</p>
             </div>
-          `;
-        }
-      }, 100);
-    });
+          </div>,
+          document.getElementById('root')
+        );
+        
+        // Then render the actual app after a delay
+        setTimeout(function() {
+          try {
+            console.log("Rendering main App component...");
+            ReactDOM.render(<App />, document.getElementById('root'));
+            console.log("App rendered successfully");
+          } catch (error) {
+            console.error("Error rendering App:", error);
+            document.getElementById('root').innerHTML = `
+              <div style="background-color: #fee2e2; color: #b91c1c; padding: 20px; border-radius: 8px; margin: 20px; font-family: sans-serif;">
+                <h2 style="font-size: 20px; font-weight: bold; margin-bottom: 10px;">Fel vid rendering</h2>
+                <p>${error.message}</p>
+                <p style="margin-top: 10px;">Pröva att ladda om sidan</p>
+              </div>
+            `;
+          }
+        }, 500);
+      } catch (error) {
+        console.error("Initialization error:", error);
+        document.getElementById('root').innerHTML = `
+          <div style="background-color: #fee2e2; color: #b91c1c; padding: 20px; border-radius: 8px; margin: 20px; font-family: sans-serif;">
+            <h2 style="font-size: 20px; font-weight: bold; margin-bottom: 10px;">Initialiseringsfel</h2>
+            <p>${error.message}</p>
+            <p style="margin-top: 10px;">Pröva att ladda om sidan</p>
+          </div>
+        `;
+      }
+    }, 300);
   </script>
 </body>
 </html> 
