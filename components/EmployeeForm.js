@@ -119,12 +119,18 @@ const EmployeeForm = ({ onLogout }) => {
             // Hämta senaste stämpling för varje medarbetare
             const latestTimestamp = await dbService.getLatestTimestampByPersonnummer(employee.personnummer);
             
+            console.log("Latest timestamp for", employee.personnummer, ":", latestTimestamp);
+            
+            let status = 'none';
+            if (latestTimestamp) {
+              // Om checkOutTime finns och inte är null, är personen utstämplad
+              status = latestTimestamp.checkOutTime ? 'out' : 'in';
+            }
+            
             return {
               id: employee.personnummer,
               name: employee.name || `Person ${Math.floor(Math.random() * 10000)}`,
-              status: latestTimestamp 
-                ? (latestTimestamp.checkOutTime ? 'out' : 'in')
-                : 'none',
+              status: status,
               timestamp: latestTimestamp?.checkInTime || null
             };
           } catch (error) {
@@ -230,8 +236,20 @@ const EmployeeForm = ({ onLogout }) => {
   // Format timestamp for display
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return '-';
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+    
+    console.log("Formatting timestamp:", timestamp, typeof timestamp);
+    
+    try {
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) {
+        console.error("Invalid date from timestamp:", timestamp);
+        return '-';
+      }
+      return date.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+    } catch (error) {
+      console.error("Error formatting timestamp:", error);
+      return '-';
+    }
   };
   
   // Validate personnummer input
@@ -423,6 +441,9 @@ const EmployeeForm = ({ onLogout }) => {
         setIsCheckedIn(false);
         setStatusMessage('');
         setSuccess('Utstämpling registrerad');
+        
+        // Uppdatera närvarolistan
+        loadEmployeeStatus();
       } else {
         // Check in
         await dbService.saveTimestamp({
@@ -440,6 +461,9 @@ const EmployeeForm = ({ onLogout }) => {
         });
         setStatusMessage(`Instämplad ${timeString}`);
         setSuccess('Instämpling registrerad');
+        
+        // Uppdatera närvarolistan
+        loadEmployeeStatus();
       }
       
       // Clear the input after successful check in/out
