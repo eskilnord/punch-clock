@@ -56,6 +56,10 @@ const AdminPanel = ({ onLogout }) => {
   });
   const [showNewTimestampForm, setShowNewTimestampForm] = React.useState(false);
   
+  // Ladda alla medarbetares tidsstämplingar för vald månad
+  const [allEmployeesTimestamps, setAllEmployeesTimestamps] = React.useState({});
+  const [allEmployeesTimestampsLoading, setAllEmployeesTimestampsLoading] = React.useState(false);
+  
   // Sätt isMountedRef till false när komponenten avmonteras
   React.useEffect(() => {
     return () => {
@@ -102,8 +106,12 @@ const AdminPanel = ({ onLogout }) => {
   
   // Ladda tidsstämplingar när medarbetare eller månad väljs
   React.useEffect(() => {
-    if (activeTab === 'timeEdit' && selectedEmployee) {
-      loadEmployeeTimestamps();
+    if (activeTab === 'timeEdit') {
+      if (selectedEmployee) {
+        loadEmployeeTimestamps();
+      } else {
+        loadAllEmployeesTimestamps();
+      }
     }
   }, [activeTab, selectedEmployee, selectedMonth]);
   
@@ -170,6 +178,100 @@ const AdminPanel = ({ onLogout }) => {
         setTimestampsLoading(false);
       }
     }
+  };
+  
+  // Ladda alla medarbetares tidsstämplingar för vald månad
+  const loadAllEmployeesTimestamps = async () => {
+    setAllEmployeesTimestampsLoading(true);
+    
+    try {
+      // Hämta alla tidsstämplingar
+      const allTimestamps = await dbService.getAllTimestamps();
+      
+      // Filtrera efter månad
+      const [year, month] = selectedMonth.split('-');
+      const startDate = new Date(year, month - 1, 1); // Månadens första dag
+      const endDate = new Date(year, month, 0); // Månadens sista dag
+      endDate.setHours(23, 59, 59, 999); // Sätt till slutet av dagen
+      
+      // Gruppera tidsstämplingar efter medarbetare
+      const timestampsByEmployee = {};
+      
+      allTimestamps.forEach(ts => {
+        const tsDate = new Date(ts.checkInTime);
+        
+        // Kontrollera om tidsstämplingen är inom vald månad
+        if (tsDate >= startDate && tsDate <= endDate) {
+          if (!timestampsByEmployee[ts.personnummer]) {
+            timestampsByEmployee[ts.personnummer] = [];
+          }
+          
+          timestampsByEmployee[ts.personnummer].push(ts);
+        }
+      });
+      
+      if (isMountedRef.current) {
+        setAllEmployeesTimestamps(timestampsByEmployee);
+      }
+    } catch (err) {
+      console.error('Error loading all employees timestamps:', err);
+      if (isMountedRef.current) {
+        setError('Kunde inte ladda tidsstämplingar för alla medarbetare.');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setAllEmployeesTimestampsLoading(false);
+      }
+    }
+  };
+  
+  // Beräkna arbetstid för en medarbetare
+  const calculateEmployeeWorkHours = (timestamps) => {
+    if (!timestamps || timestamps.length === 0) {
+      return {
+        totalHours: 0,
+        completedShifts: 0,
+        openShifts: 0
+      };
+    }
+    
+    let totalHours = 0;
+    let completedShifts = 0;
+    let openShifts = 0;
+    
+    timestamps.forEach(ts => {
+      if (ts.checkOutTime) {
+        totalHours += utils.timestampToHours(
+          ts.checkInTime, 
+          ts.checkOutTime, 
+          ts.shiftInfo?.breakDuration || 0
+        );
+        completedShifts++;
+      } else {
+        openShifts++;
+      }
+    });
+    
+    return {
+      totalHours,
+      completedShifts,
+      openShifts
+    };
+  };
+  
+  // Få namn på medarbetare från personnummer
+  const getEmployeeName = (personnummer) => {
+    const employee = employees.find(emp => emp.personnummer === personnummer);
+    return employee ? employee.name || personnummer : personnummer;
+  };
+  
+  // Kontrollera om en månad är godkänd för en medarbetare
+  const isMonthApprovedForEmployee = (personnummer) => {
+    if (!personnummer || !selectedMonth || !approvedMonths[personnummer]) {
+      return false;
+    }
+    
+    return approvedMonths[personnummer].includes(selectedMonth);
   };
   
   // Starta redigering av en tidsstämpling
@@ -1371,7 +1473,7 @@ const AdminPanel = ({ onLogout }) => {
                 className="w-full px-3 py-2 border rounded-md"
                 disabled={loading}
               >
-                <option value="">Välj medarbetare</option>
+                <option value="">Visa alla medarbetare</option>
                 {employees.map(emp => (
                   <option key={emp.personnummer} value={emp.personnummer}>
                     {emp.name || emp.personnummer}
@@ -1432,20 +1534,229 @@ const AdminPanel = ({ onLogout }) => {
             </div>
           </div>
           
-          {/* Tidsstämplingar */}
+          {/* Översikt över alla medarbetare */}
+          {!selectedEmployee && (
+            <>
+              <h3 className="text-lg font-medium mb-3">Sammanställning för alla medarbetare</h3>
+              
+              {allEmployeesTimestampsLoading ? (
+                <div className="flex justify-center items-center h-40">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                </div>
+              ) : Object.keys(allEmployeesTimestamps).length === 0 ? (
+                <div className="bg-gray-50 p-6 rounded-lg text-center text-gray-500">
+                  Inga tidsstämplingar hittades för denna period.
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Medarbetare
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Antal pass
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Total arbetstid
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Åtgärder
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {Object.entries(allEmployeesTimestamps).map(([personnummer, timestamps]) => {
+                          const workHours = calculateEmployeeWorkHours(timestamps);
+                          const isApproved = isMonthApprovedForEmployee(personnummer);
+                          
+                          return (
+                            <tr key={personnummer} className={isApproved ? 'bg-green-50' : ''}>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                                {getEmployeeName(personnummer)}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                {workHours.completedShifts + workHours.openShifts}
+                                {workHours.openShifts > 0 && (
+                                  <span className="text-yellow-600 ml-1">
+                                    ({workHours.openShifts} öppna)
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                {workHours.totalHours.toFixed(2)} timmar
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                {isApproved ? (
+                                  <span className="bg-green-100 text-green-800 text-xs font-medium py-1 px-2 rounded">
+                                    Godkänd
+                                  </span>
+                                ) : (
+                                  <span className="bg-yellow-100 text-yellow-800 text-xs font-medium py-1 px-2 rounded">
+                                    Ej godkänd
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                <button
+                                  onClick={() => setSelectedEmployee(personnummer)}
+                                  className="text-blue-600 hover:text-blue-900"
+                                >
+                                  Visa detaljer
+                                </button>
+                                
+                                {!isApproved && (
+                                  <button
+                                    onClick={async () => {
+                                      setLoading(true);
+                                      try {
+                                        const updatedApprovedMonths = {...approvedMonths};
+                                        
+                                        if (!updatedApprovedMonths[personnummer]) {
+                                          updatedApprovedMonths[personnummer] = [];
+                                        }
+                                        
+                                        updatedApprovedMonths[personnummer].push(selectedMonth);
+                                        updatedApprovedMonths[personnummer].sort();
+                                        
+                                        await saveApprovedMonths(updatedApprovedMonths);
+                                        
+                                        if (isMountedRef.current) {
+                                          setSuccess(`Månad ${selectedMonth} godkänd för ${getEmployeeName(personnummer)}.`);
+                                          loadAllEmployeesTimestamps();
+                                          
+                                          setTimeout(() => {
+                                            if (isMountedRef.current) {
+                                              setSuccess('');
+                                            }
+                                          }, 3000);
+                                        }
+                                      } catch (err) {
+                                        console.error('Error approving month:', err);
+                                        if (isMountedRef.current) {
+                                          setError('Kunde inte godkänna månaden.');
+                                        }
+                                      } finally {
+                                        if (isMountedRef.current) {
+                                          setLoading(false);
+                                        }
+                                      }
+                                    }}
+                                    className="text-green-600 hover:text-green-900 ml-3"
+                                    disabled={loading}
+                                  >
+                                    Godkänn
+                                  </button>
+                                )}
+                                
+                                {isApproved && (
+                                  <button
+                                    onClick={async () => {
+                                      setLoading(true);
+                                      try {
+                                        const updatedApprovedMonths = {...approvedMonths};
+                                        
+                                        if (updatedApprovedMonths[personnummer]) {
+                                          updatedApprovedMonths[personnummer] = updatedApprovedMonths[personnummer]
+                                            .filter(month => month !== selectedMonth);
+                                          
+                                          await saveApprovedMonths(updatedApprovedMonths);
+                                          
+                                          if (isMountedRef.current) {
+                                            setSuccess(`Godkännande borttaget för ${getEmployeeName(personnummer)}.`);
+                                            loadAllEmployeesTimestamps();
+                                            
+                                            setTimeout(() => {
+                                              if (isMountedRef.current) {
+                                                setSuccess('');
+                                              }
+                                            }, 3000);
+                                          }
+                                        }
+                                      } catch (err) {
+                                        console.error('Error unapproving month:', err);
+                                        if (isMountedRef.current) {
+                                          setError('Kunde inte ta bort godkännande.');
+                                        }
+                                      } finally {
+                                        if (isMountedRef.current) {
+                                          setLoading(false);
+                                        }
+                                      }
+                                    }}
+                                    className="text-yellow-600 hover:text-yellow-900 ml-3"
+                                    disabled={loading}
+                                  >
+                                    Ta bort godkännande
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {/* Sammanställning av alla medarbetare */}
+                  <div className="mt-6 bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-medium mb-2">Total sammanställning för {selectedMonth}</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <span className="text-sm text-gray-500">Totalt antal medarbetare:</span>
+                        <p className="font-medium">{Object.keys(allEmployeesTimestamps).length}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-500">Totalt antal arbetspass:</span>
+                        <p className="font-medium">
+                          {Object.values(allEmployeesTimestamps).reduce((sum, timestamps) => sum + timestamps.length, 0)}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-sm text-gray-500">Total arbetstid:</span>
+                        <p className="font-medium">
+                          {Object.values(allEmployeesTimestamps).reduce((sum, timestamps) => {
+                            const workHours = calculateEmployeeWorkHours(timestamps);
+                            return sum + workHours.totalHours;
+                          }, 0).toFixed(2)} timmar
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+          
+          {/* Tidsstämplingar för vald medarbetare */}
           {selectedEmployee && (
             <>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-lg font-medium">Tidsstämplingar</h3>
-                {!isMonthApproved() && (
+                
+                <div className="flex items-center space-x-2">
                   <button
-                    onClick={handleShowNewTimestampForm}
-                    className="bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded-md text-sm"
-                    disabled={loading || timestampsLoading}
+                    onClick={() => setSelectedEmployee(null)}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-1 px-3 rounded-md text-sm"
                   >
-                    + Lägg till manuell stämpling
+                    &larr; Tillbaka till översikten
                   </button>
-                )}
+                  
+                  {!isMonthApproved() && (
+                    <button
+                      onClick={handleShowNewTimestampForm}
+                      className="bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded-md text-sm"
+                      disabled={loading || timestampsLoading}
+                    >
+                      + Lägg till manuell stämpling
+                    </button>
+                  )}
+                </div>
               </div>
               
               {/* Formulär för att lägga till ny tidsstämpling */}
