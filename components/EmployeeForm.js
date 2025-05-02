@@ -143,7 +143,8 @@ const EmployeeForm = ({ onLogout }) => {
               name: employee.name || `Person ${Math.floor(Math.random() * 10000)}`,
               status: status,
               timestamp: latestTimestamp?.checkInTime || null,
-              notApproved: employee.approved === false // Lägg till godkännandestatus
+              notApproved: employee.approved === false, // Lägg till godkännandestatus
+              shiftInfo: latestTimestamp?.shiftInfo || null // Lägg till information om schemalagt arbetspass
             };
           } catch (error) {
             console.error("Error fetching status for employee:", error);
@@ -152,7 +153,8 @@ const EmployeeForm = ({ onLogout }) => {
               name: employee.name || `Person ${Math.floor(Math.random() * 10000)}`,
               status: 'error',
               timestamp: null,
-              notApproved: employee.approved === false // Lägg till godkännandestatus
+              notApproved: employee.approved === false, // Lägg till godkännandestatus
+              shiftInfo: null
             };
           }
         })
@@ -168,6 +170,13 @@ const EmployeeForm = ({ onLogout }) => {
         setLoadingEmployees(false);
       }
     }
+  };
+  
+  // Formatera schemalagt arbetspass
+  const formatShiftTime = (shiftInfo) => {
+    if (!shiftInfo || !shiftInfo.startTime || !shiftInfo.endTime) return null;
+    
+    return `${shiftInfo.startTime} - ${shiftInfo.endTime}`;
   };
   
   // Reset messages when personnummer changes
@@ -702,6 +711,7 @@ const EmployeeForm = ({ onLogout }) => {
                 <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Namn</th>
                 <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tid</th>
+                <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Schema</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -736,6 +746,18 @@ const EmployeeForm = ({ onLogout }) => {
                   </td>
                   <td className="py-3 px-3 whitespace-nowrap text-sm text-gray-500">
                     {formatTimestamp(employee.timestamp)}
+                  </td>
+                  <td className="py-3 px-3 whitespace-nowrap text-sm">
+                    {employee.shiftInfo && (
+                      <div className="text-blue-600">
+                        <div className="font-medium">{formatShiftTime(employee.shiftInfo)}</div>
+                        {employee.shiftInfo.breakDuration && (
+                          <div className="text-xs text-gray-500">
+                            Rast: {employee.shiftInfo.breakDuration} min
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
