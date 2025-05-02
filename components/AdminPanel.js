@@ -96,17 +96,36 @@ const AdminPanel = ({ onLogout }) => {
   
   // Ladda in statistikdata när statistikfliken aktiveras
   React.useEffect(() => {
-    if (activeTab === 'statistics' && !chartData) {
-      loadChartData();
+    if (activeTab === 'statistics') {
+      if (!chartData) {
+        loadChartData();
+      }
+      
+      // Kontrollera och logga referenserna till canvas-elementen
+      console.log("Statistics tab activated, canvas refs:", {
+        hourlyActivity: hourlyActivityChartRef.current ? "exists" : "missing",
+        employeeActivity: employeeActivityChartRef.current ? "exists" : "missing",
+        workedHours: workedHoursChartRef.current ? "exists" : "missing",
+        scheduledVsActual: scheduledVsActualChartRef.current ? "exists" : "missing"
+      });
     }
   }, [activeTab]);
   
   // Uppdatera grafer när chartData ändras
   React.useEffect(() => {
     if (chartData && activeTab === 'statistics') {
-      renderCharts();
+      // Fördröj rendering av grafer för att säkerställa att canvas-elementen finns i DOM
+      setTimeout(() => {
+        console.log("Canvas refs available:", {
+          hourlyActivity: !!hourlyActivityChartRef.current,
+          employeeActivity: !!employeeActivityChartRef.current,
+          workedHours: !!workedHoursChartRef.current,
+          scheduledVsActual: !!scheduledVsActualChartRef.current
+        });
+        renderCharts();
+      }, 100);
     }
-  }, [chartData]);
+  }, [chartData, activeTab]);
   
   // Ladda tidsstämplingar när medarbetare eller månad väljs
   React.useEffect(() => {
@@ -2475,19 +2494,19 @@ const AdminPanel = ({ onLogout }) => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-gray-50 p-4 rounded-lg">
-                <canvas ref={hourlyActivityChartRef}></canvas>
+                <canvas id="hourlyActivityChart" ref={hourlyActivityChartRef}></canvas>
               </div>
               
               <div className="bg-gray-50 p-4 rounded-lg">
-                <canvas ref={employeeActivityChartRef}></canvas>
+                <canvas id="employeeActivityChart" ref={employeeActivityChartRef}></canvas>
               </div>
               
               <div className="bg-gray-50 p-4 rounded-lg">
-                <canvas ref={workedHoursChartRef}></canvas>
+                <canvas id="workedHoursChart" ref={workedHoursChartRef}></canvas>
               </div>
               
               <div className="bg-gray-50 p-4 rounded-lg">
-                <canvas ref={scheduledVsActualChartRef}></canvas>
+                <canvas id="scheduledVsActualChart" ref={scheduledVsActualChartRef}></canvas>
               </div>
             </div>
           )}
