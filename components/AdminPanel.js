@@ -5,7 +5,7 @@ const AdminPanel = ({ onLogout }) => {
   
   const [employees, setEmployees] = React.useState([]);
   const [pendingEmployees, setPendingEmployees] = React.useState([]);
-  const [newEmployee, setNewEmployee] = React.useState({ personnummer: '', name: '' });
+  const [newEmployee, setNewEmployee] = React.useState({ name: '', personnummer: '' });
   const [normalizedPersonnummer, setNormalizedPersonnummer] = React.useState('');
   const [error, setError] = React.useState('');
   const [success, setSuccess] = React.useState('');
@@ -23,6 +23,7 @@ const AdminPanel = ({ onLogout }) => {
   const [requireShiftInfo, setRequireShiftInfo] = React.useState(false);
   const [chartData, setChartData] = React.useState(null);
   const [chartLoading, setChartLoading] = React.useState(false);
+  const [isChartJsLoaded, setIsChartJsLoaded] = React.useState(typeof Chart !== 'undefined');
   
   // Data för tidredgeringsfliken
   const [selectedMonth, setSelectedMonth] = React.useState(
@@ -99,6 +100,13 @@ const AdminPanel = ({ onLogout }) => {
     if (activeTab === 'statistics') {
       if (!chartData) {
         loadChartData();
+      }
+      
+      // Kontrollera om Chart.js är laddat om vi ska visa statistik
+      if (typeof Chart === 'undefined' && !isChartJsLoaded) {
+        console.log("Statistics tab activated but Chart.js is not loaded, triggering load");
+        // Kommer att triggra vår andra useEffect som laddar Chart.js
+        setIsChartJsLoaded(false);
       }
       
       // Kontrollera och logga referenserna till canvas-elementen
@@ -519,29 +527,43 @@ const AdminPanel = ({ onLogout }) => {
     
     console.log("Rendering charts with data:", chartData);
     
-    // Skapa färgpaletter
-    const blueGradient = {
-      backgroundColor: 'rgba(66, 135, 245, 0.6)',
-      borderColor: 'rgba(66, 135, 245, 1)',
-      borderWidth: 1
-    };
+    // Kontrollera att Chart objekt finns tillgängligt
+    if (typeof Chart === 'undefined') {
+      if (isChartJsLoaded) {
+        // Vi har markerat att Chart.js är laddat, men objektet finns inte
+        console.error("Chart.js markerades som laddad men är inte definierad. Detta är ett oväntat tillstånd.");
+        setError("Ett fel uppstod med diagrambiblioteket. Vänligen ladda om sidan.");
+        return;
+      }
+      
+      console.error("Chart.js är inte definierad. Komponentens effect borde ha laddat det.");
+      return;
+    }
     
-    const greenGradient = {
-      backgroundColor: 'rgba(75, 192, 192, 0.6)',
-      borderColor: 'rgba(75, 192, 192, 1)',
-      borderWidth: 1
-    };
-    
-    const orangeGradient = {
-      backgroundColor: 'rgba(255, 159, 64, 0.6)',
-      borderColor: 'rgba(255, 159, 64, 1)',
-      borderWidth: 1
-    };
-
     try {
+      // Skapa färgpaletter
+      const blueGradient = {
+        backgroundColor: 'rgba(66, 135, 245, 0.6)',
+        borderColor: 'rgba(66, 135, 245, 1)',
+        borderWidth: 1
+      };
+      
+      const greenGradient = {
+        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+        borderColor: 'rgba(75, 192, 192, 1)',
+        borderWidth: 1
+      };
+      
+      const orangeGradient = {
+        backgroundColor: 'rgba(255, 159, 64, 0.6)',
+        borderColor: 'rgba(255, 159, 64, 1)',
+        borderWidth: 1
+      };
+  
       // 1. Aktivitet per timme
       if (hourlyActivityChartRef.current) {
-        console.log("Rendering hourly activity chart");
+        console.log("Rendering hourly activity chart with ref:", hourlyActivityChartRef.current);
+        
         // Förstör befintlig graf om den finns
         if (chartsCreated.current.hourlyActivity) {
           console.log("Destroying old hourly activity chart");
@@ -799,7 +821,7 @@ const AdminPanel = ({ onLogout }) => {
       }
     } catch (error) {
       console.error("Error while rendering charts:", error);
-      setError("Ett fel uppstod vid rendering av grafer: " + error.message);
+      setError(`Fel vid rendering av grafer: ${error.message}`);
     }
   };
   
@@ -1314,6 +1336,60 @@ const AdminPanel = ({ onLogout }) => {
       }
     }
   };
+  
+  // Chart.js laddning
+  React.useEffect(() => {
+    // Kontrollera om Chart.js är tillgängligt, annars ladda det dynamiskt
+    if (typeof Chart === 'undefined' && !isChartJsLoaded) {
+      console.log("Laddar Chart.js dynamiskt vid komponentinitialisering");
+      
+      const loadChartJs = async () => {
+        try {
+          // Skapa ett Promise för att ladda Chart.js
+          const chartLoaded = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = "https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js";
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+          
+          // Vänta på att Chart.js laddas
+          await chartLoaded;
+          console.log("Chart.js laddad dynamiskt");
+          
+          // Skapa ett Promise för att ladda adapter
+          const adapterLoaded = new Promise((resolve, reject) => {
+            const adapterScript = document.createElement('script');
+            adapterScript.src = "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js";
+            adapterScript.onload = resolve;
+            adapterScript.onerror = reject;
+            document.head.appendChild(adapterScript);
+          });
+          
+          // Vänta på att adaptern laddas
+          await adapterLoaded;
+          console.log("Chart.js adapter laddad dynamiskt");
+          
+          // Markera Chart.js som laddad
+          setIsChartJsLoaded(true);
+          
+          // Om vi har chartData, rendera grafer
+          if (chartData && activeTab === 'statistics') {
+            setTimeout(() => {
+              console.log("Försöker rendera grafer efter dynamisk laddning");
+              renderCharts();
+            }, 100);
+          }
+        } catch (error) {
+          console.error("Fel vid dynamisk laddning av Chart.js:", error);
+          setError("Kunde inte ladda diagrambiblioteket: " + error.message);
+        }
+      };
+      
+      loadChartJs();
+    }
+  }, [isChartJsLoaded, chartData, activeTab]);
   
   return (
     <div className="max-w-6xl mx-auto py-6">
