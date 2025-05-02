@@ -2,7 +2,7 @@
 
 // Database name and version
 const DB_NAME = 'stempelklocka';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Initialize the database
 const initDB = () => {
@@ -34,6 +34,12 @@ const initDB = () => {
         timestampStore.createIndex('personnummer', 'personnummer', { unique: false });
         timestampStore.createIndex('checkInTime', 'checkInTime', { unique: false });
         timestampStore.createIndex('checkOutTime', 'checkOutTime', { unique: false });
+        timestampStore.createIndex('byPersonnummerAndTime', ['personnummer', 'checkInTime'], { unique: false });
+      } else {
+        const timestampStore = event.currentTarget.transaction.objectStore('timestamps');
+        if (!timestampStore.indexNames.contains('byPersonnummerAndTime')) {
+          timestampStore.createIndex('byPersonnummerAndTime', ['personnummer', 'checkInTime'], { unique: false });
+        }
       }
       
       // Store for configurations
@@ -310,7 +316,36 @@ const dbService = {
   
   // Get latest timestamp by personnummer (for backward compatibility)
   getLatestTimestampByPersonnummer: async (personnummer) => {
-    return dbService.getLatestTimestamp(personnummer);
+    const db = await initDB();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['timestamps'], 'readonly');
+      const store = transaction.objectStore('timestamps');
+      const index = store.index('byPersonnummerAndTime');
+      
+      // Använd IDBKeyRange för att hitta alla tidsstämplar för medarbetaren
+      const range = IDBKeyRange.bound(
+        [personnummer, 0],     // Lägsta värdet
+        [personnummer, Date.now()]  // Högsta värdet
+      );
+      
+      // Använd openCursor med prev för att få den senaste först
+      const request = index.openCursor(range, 'prev');
+      
+      request.onsuccess = event => {
+        const cursor = event.target.result;
+        if (cursor) {
+          // Första träffen är den senaste tidsstämpeln
+          resolve(cursor.value);
+        } else {
+          resolve(null);
+        }
+      };
+      
+      request.onerror = event => {
+        reject(`Error getting latest timestamp by personnummer: ${event.target.error}`);
+      };
+    });
   },
   
   // Get admin pin

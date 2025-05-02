@@ -123,9 +123,9 @@ const EmployeeForm = ({ onLogout }) => {
               id: employee.personnummer,
               name: employee.name || `Person ${Math.floor(Math.random() * 10000)}`,
               status: latestTimestamp 
-                ? (latestTimestamp.type === 'in' ? 'in' : 'out')
+                ? (latestTimestamp.checkOutTime ? 'out' : 'in')
                 : 'none',
-              timestamp: latestTimestamp?.timestamp || null
+              timestamp: latestTimestamp?.checkInTime || null
             };
           } catch (error) {
             console.error("Error fetching status for employee:", error);
