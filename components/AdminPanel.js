@@ -17,6 +17,7 @@ const AdminPanel = ({ onLogout }) => {
   );
   const [currentDateTime, setCurrentDateTime] = React.useState(new Date());
   const [showNumpad, setShowNumpad] = React.useState(true);
+  const [requireShiftInfo, setRequireShiftInfo] = React.useState(false);
   
   // Update current date and time every minute
   React.useEffect(() => {
@@ -40,10 +41,40 @@ const AdminPanel = ({ onLogout }) => {
     return currentDateTime.toLocaleDateString('sv-SE', options);
   };
   
-  // Load employees on mount
+  // Load employees and settings on mount
   React.useEffect(() => {
     loadEmployees();
+    loadSettings();
   }, []);
+  
+  // Load app settings
+  const loadSettings = async () => {
+    try {
+      const requireShift = await dbService.getConfig('requireShiftInfo');
+      setRequireShiftInfo(requireShift === 'true');
+    } catch (err) {
+      console.error('Error loading settings:', err);
+    }
+  };
+  
+  // Save the shift requirement setting
+  const toggleShiftRequirement = async () => {
+    setLoading(true);
+    try {
+      const newValue = !requireShiftInfo;
+      await dbService.saveConfig('requireShiftInfo', newValue.toString());
+      setRequireShiftInfo(newValue);
+      setSuccess(`Arbetspass-inmatning ${newValue ? 'aktiverad' : 'inaktiverad'}`);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error(err);
+      setError('Ett fel uppstod vid sparande av inställningar.');
+    } finally {
+      setLoading(false);
+    }
+  };
   
   // Try to normalize personnummer when it changes
   React.useEffect(() => {
@@ -639,6 +670,38 @@ const AdminPanel = ({ onLogout }) => {
         <div>
           <h3 className="text-lg font-semibold mb-4">Inställningar</h3>
           
+          {/* Shift Info Setting */}
+          <div className="border p-4 rounded-md mb-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h4 className="font-medium">Arbetspass-information</h4>
+                <p className="text-sm text-gray-600 mt-1">
+                  {requireShiftInfo
+                    ? "Medarbetare måste ange arbetspass vid instämpling"
+                    : "Medarbetare behöver inte ange arbetspass"}
+                </p>
+              </div>
+              <div className="relative inline-block w-12 align-middle select-none transition duration-200 ease-in">
+                <input
+                  type="checkbox"
+                  name="toggle"
+                  id="toggle-shift-info"
+                  checked={requireShiftInfo}
+                  onChange={toggleShiftRequirement}
+                  disabled={loading}
+                  className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
+                />
+                <label
+                  htmlFor="toggle-shift-info"
+                  className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${
+                    requireShiftInfo ? 'bg-blue-500' : 'bg-gray-300'
+                  }`}
+                ></label>
+              </div>
+            </div>
+          </div>
+          
+          {/* Clear Data Setting */}
           <div className="border p-4 rounded-md bg-red-50">
             <h4 className="font-medium mb-2">Rensa all data</h4>
             <p className="text-sm text-gray-600 mb-4">
@@ -670,4 +733,21 @@ const AdminPanel = ({ onLogout }) => {
 };
 
 // Export the component
-window.AdminPanel = AdminPanel; 
+window.AdminPanel = AdminPanel;
+
+// CSS for the toggle
+document.head.insertAdjacentHTML(
+  'beforeend',
+  `<style>
+    .toggle-checkbox:checked {
+      right: 0;
+      border-color: #fff;
+    }
+    .toggle-checkbox:checked + .toggle-label {
+      background-color: #4F46E5;
+    }
+    .toggle-label {
+      transition: background-color 0.2s ease;
+    }
+  </style>`
+); 
