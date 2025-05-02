@@ -52,7 +52,11 @@ const AdminPanel = ({ onLogout }) => {
   const [newTimestamp, setNewTimestamp] = React.useState({
     checkInTime: new Date().toISOString(),
     checkOutTime: null,
-    shiftInfo: { breakDuration: 0 }
+    shiftInfo: { 
+      breakDuration: 0,
+      scheduledStart: null,
+      scheduledEnd: null
+    }
   });
   const [showNewTimestampForm, setShowNewTimestampForm] = React.useState(false);
   
@@ -1160,11 +1164,22 @@ const AdminPanel = ({ onLogout }) => {
     const outTime = new Date(defaultDate);
     outTime.setHours(16, 30, 0, 0);
     
+    // Sätt standardtid för schemalagd arbetstid
+    const scheduledInTime = new Date(defaultDate);
+    scheduledInTime.setHours(8, 0, 0, 0);
+    
+    const scheduledOutTime = new Date(defaultDate);
+    scheduledOutTime.setHours(16, 0, 0, 0);
+    
     setNewTimestamp({
       personnummer: selectedEmployee,
       checkInTime: inTime.toISOString(),
       checkOutTime: outTime.toISOString(),
-      shiftInfo: { breakDuration: 30 }
+      shiftInfo: { 
+        breakDuration: 30,
+        scheduledStart: scheduledInTime.toISOString(),
+        scheduledEnd: scheduledOutTime.toISOString()
+      }
     });
     
     setShowNewTimestampForm(true);
@@ -1772,96 +1787,175 @@ const AdminPanel = ({ onLogout }) => {
                     </button>
                   </div>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm text-gray-700 mb-1">Datum</label>
-                      <input
-                        type="date"
-                        value={new Date(newTimestamp.checkInTime).toISOString().split('T')[0]}
-                        onChange={(e) => {
-                          const newDate = e.target.value;
-                          
-                          // Uppdatera incheckningstid
-                          const inTime = new Date(newTimestamp.checkInTime);
-                          const newInDateTime = new Date(`${newDate}T${inTime.toTimeString().slice(0, 8)}`);
-                          
-                          // Uppdatera utcheckningstid om den finns
-                          let newOutDateTime = null;
-                          if (newTimestamp.checkOutTime) {
-                            const outTime = new Date(newTimestamp.checkOutTime);
-                            newOutDateTime = new Date(`${newDate}T${outTime.toTimeString().slice(0, 8)}`);
-                          }
-                          
-                          setNewTimestamp({
-                            ...newTimestamp,
-                            checkInTime: newInDateTime.toISOString(),
-                            checkOutTime: newOutDateTime ? newOutDateTime.toISOString() : null
-                          });
-                        }}
-                        className="w-full px-3 py-2 border rounded-md"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm text-gray-700 mb-1">Incheckning</label>
-                      <input
-                        type="time"
-                        value={new Date(newTimestamp.checkInTime).toTimeString().slice(0, 5)}
-                        onChange={(e) => {
-                          const oldDate = new Date(newTimestamp.checkInTime).toISOString().split('T')[0];
-                          const newTime = e.target.value;
-                          const newDateTime = new Date(`${oldDate}T${newTime}`);
-                          
-                          setNewTimestamp({
-                            ...newTimestamp,
-                            checkInTime: newDateTime.toISOString()
-                          });
-                        }}
-                        className="w-full px-3 py-2 border rounded-md"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm text-gray-700 mb-1">Utcheckning</label>
-                      <input
-                        type="time"
-                        value={newTimestamp.checkOutTime ? new Date(newTimestamp.checkOutTime).toTimeString().slice(0, 5) : ''}
-                        onChange={(e) => {
-                          const oldDate = new Date(newTimestamp.checkInTime).toISOString().split('T')[0];
-                          const newTime = e.target.value;
-                          
-                          let newOutDateTime = null;
-                          if (newTime) {
-                            newOutDateTime = new Date(`${oldDate}T${newTime}`);
-                          }
-                          
-                          setNewTimestamp({
-                            ...newTimestamp,
-                            checkOutTime: newTime ? newOutDateTime.toISOString() : null
-                          });
-                        }}
-                        className="w-full px-3 py-2 border rounded-md"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm text-gray-700 mb-1">Rast (minuter)</label>
-                      <input
-                        type="number"
-                        value={newTimestamp.shiftInfo?.breakDuration || 0}
-                        onChange={(e) => {
-                          const newBreakDuration = e.target.value;
-                          setNewTimestamp({
-                            ...newTimestamp,
-                            shiftInfo: {
-                              ...newTimestamp.shiftInfo || {},
-                              breakDuration: newBreakDuration
+                  <div className="mb-4">
+                    <h5 className="font-medium text-sm mb-2 text-gray-700">Faktisk arbetstid</h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-sm text-gray-700 mb-1">Datum</label>
+                        <input
+                          type="date"
+                          value={new Date(newTimestamp.checkInTime).toISOString().split('T')[0]}
+                          onChange={(e) => {
+                            const newDate = e.target.value;
+                            
+                            // Uppdatera incheckningstid
+                            const inTime = new Date(newTimestamp.checkInTime);
+                            const newInDateTime = new Date(`${newDate}T${inTime.toTimeString().slice(0, 8)}`);
+                            
+                            // Uppdatera utcheckningstid om den finns
+                            let newOutDateTime = null;
+                            if (newTimestamp.checkOutTime) {
+                              const outTime = new Date(newTimestamp.checkOutTime);
+                              newOutDateTime = new Date(`${newDate}T${outTime.toTimeString().slice(0, 8)}`);
                             }
-                          });
-                        }}
-                        min="0"
-                        className="w-full px-3 py-2 border rounded-md"
-                      />
+                            
+                            // Uppdatera schemalagda tider
+                            let newScheduledStart = null;
+                            let newScheduledEnd = null;
+                            
+                            if (newTimestamp.shiftInfo?.scheduledStart) {
+                              const schedStart = new Date(newTimestamp.shiftInfo.scheduledStart);
+                              newScheduledStart = new Date(`${newDate}T${schedStart.toTimeString().slice(0, 8)}`);
+                            }
+                            
+                            if (newTimestamp.shiftInfo?.scheduledEnd) {
+                              const schedEnd = new Date(newTimestamp.shiftInfo.scheduledEnd);
+                              newScheduledEnd = new Date(`${newDate}T${schedEnd.toTimeString().slice(0, 8)}`);
+                            }
+                            
+                            setNewTimestamp({
+                              ...newTimestamp,
+                              checkInTime: newInDateTime.toISOString(),
+                              checkOutTime: newOutDateTime ? newOutDateTime.toISOString() : null,
+                              shiftInfo: {
+                                ...newTimestamp.shiftInfo,
+                                scheduledStart: newScheduledStart ? newScheduledStart.toISOString() : null,
+                                scheduledEnd: newScheduledEnd ? newScheduledEnd.toISOString() : null,
+                              }
+                            });
+                          }}
+                          className="w-full px-3 py-2 border rounded-md"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm text-gray-700 mb-1">Incheckning</label>
+                        <input
+                          type="time"
+                          value={new Date(newTimestamp.checkInTime).toTimeString().slice(0, 5)}
+                          onChange={(e) => {
+                            const oldDate = new Date(newTimestamp.checkInTime).toISOString().split('T')[0];
+                            const newTime = e.target.value;
+                            const newDateTime = new Date(`${oldDate}T${newTime}`);
+                            
+                            setNewTimestamp({
+                              ...newTimestamp,
+                              checkInTime: newDateTime.toISOString()
+                            });
+                          }}
+                          className="w-full px-3 py-2 border rounded-md"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm text-gray-700 mb-1">Utcheckning</label>
+                        <input
+                          type="time"
+                          value={newTimestamp.checkOutTime ? new Date(newTimestamp.checkOutTime).toTimeString().slice(0, 5) : ''}
+                          onChange={(e) => {
+                            const oldDate = new Date(newTimestamp.checkInTime).toISOString().split('T')[0];
+                            const newTime = e.target.value;
+                            
+                            let newOutDateTime = null;
+                            if (newTime) {
+                              newOutDateTime = new Date(`${oldDate}T${newTime}`);
+                            }
+                            
+                            setNewTimestamp({
+                              ...newTimestamp,
+                              checkOutTime: newTime ? newOutDateTime.toISOString() : null
+                            });
+                          }}
+                          className="w-full px-3 py-2 border rounded-md"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm text-gray-700 mb-1">Rast (minuter)</label>
+                        <input
+                          type="number"
+                          value={newTimestamp.shiftInfo?.breakDuration || 0}
+                          onChange={(e) => {
+                            const newBreakDuration = e.target.value;
+                            setNewTimestamp({
+                              ...newTimestamp,
+                              shiftInfo: {
+                                ...newTimestamp.shiftInfo || {},
+                                breakDuration: newBreakDuration
+                              }
+                            });
+                          }}
+                          min="0"
+                          className="w-full px-3 py-2 border rounded-md"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mb-4">
+                    <h5 className="font-medium text-sm mb-2 text-gray-700">Schemalagd arbetstid</h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm text-gray-700 mb-1">Schemalagd start</label>
+                        <input
+                          type="time"
+                          value={newTimestamp.shiftInfo?.scheduledStart ? new Date(newTimestamp.shiftInfo.scheduledStart).toTimeString().slice(0, 5) : ''}
+                          onChange={(e) => {
+                            const oldDate = new Date(newTimestamp.checkInTime).toISOString().split('T')[0];
+                            const newTime = e.target.value;
+                            
+                            let newScheduledStart = null;
+                            if (newTime) {
+                              newScheduledStart = new Date(`${oldDate}T${newTime}`);
+                            }
+                            
+                            setNewTimestamp({
+                              ...newTimestamp,
+                              shiftInfo: {
+                                ...newTimestamp.shiftInfo || {},
+                                scheduledStart: newTime ? newScheduledStart.toISOString() : null
+                              }
+                            });
+                          }}
+                          className="w-full px-3 py-2 border rounded-md"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm text-gray-700 mb-1">Schemalagd slut</label>
+                        <input
+                          type="time"
+                          value={newTimestamp.shiftInfo?.scheduledEnd ? new Date(newTimestamp.shiftInfo.scheduledEnd).toTimeString().slice(0, 5) : ''}
+                          onChange={(e) => {
+                            const oldDate = new Date(newTimestamp.checkInTime).toISOString().split('T')[0];
+                            const newTime = e.target.value;
+                            
+                            let newScheduledEnd = null;
+                            if (newTime) {
+                              newScheduledEnd = new Date(`${oldDate}T${newTime}`);
+                            }
+                            
+                            setNewTimestamp({
+                              ...newTimestamp,
+                              shiftInfo: {
+                                ...newTimestamp.shiftInfo || {},
+                                scheduledEnd: newTime ? newScheduledEnd.toISOString() : null
+                              }
+                            });
+                          }}
+                          className="w-full px-3 py-2 border rounded-md"
+                        />
+                      </div>
                     </div>
                   </div>
                   
@@ -1910,6 +2004,9 @@ const AdminPanel = ({ onLogout }) => {
                           Rast (min)
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Schema
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Arbetstid
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1931,9 +2028,39 @@ const AdminPanel = ({ onLogout }) => {
                                     const newDate = e.target.value;
                                     const oldTime = new Date(editingTimestamp.checkInTime).toTimeString().split(' ')[0];
                                     const newDateTime = new Date(`${newDate}T${oldTime}`);
+                                    
+                                    // Uppdatera även schemalagda tider
+                                    let newScheduledStart = editingTimestamp.shiftInfo?.scheduledStart;
+                                    let newScheduledEnd = editingTimestamp.shiftInfo?.scheduledEnd;
+                                    
+                                    if (newScheduledStart) {
+                                      const schedStart = new Date(newScheduledStart);
+                                      schedStart.setFullYear(
+                                        newDateTime.getFullYear(), 
+                                        newDateTime.getMonth(), 
+                                        newDateTime.getDate()
+                                      );
+                                      newScheduledStart = schedStart.toISOString();
+                                    }
+                                    
+                                    if (newScheduledEnd) {
+                                      const schedEnd = new Date(newScheduledEnd);
+                                      schedEnd.setFullYear(
+                                        newDateTime.getFullYear(), 
+                                        newDateTime.getMonth(), 
+                                        newDateTime.getDate()
+                                      );
+                                      newScheduledEnd = schedEnd.toISOString();
+                                    }
+                                    
                                     setEditingTimestamp({
                                       ...editingTimestamp,
-                                      checkInTime: newDateTime.toISOString()
+                                      checkInTime: newDateTime.toISOString(),
+                                      shiftInfo: {
+                                        ...editingTimestamp.shiftInfo || {},
+                                        scheduledStart: newScheduledStart,
+                                        scheduledEnd: newScheduledEnd
+                                      }
                                     });
                                   }}
                                   className="px-2 py-1 border rounded w-full"
@@ -1989,6 +2116,48 @@ const AdminPanel = ({ onLogout }) => {
                                   className="px-2 py-1 border rounded w-full"
                                 />
                               </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="flex flex-col gap-1">
+                                  <input
+                                    type="time"
+                                    value={editingTimestamp.shiftInfo?.scheduledStart ? new Date(editingTimestamp.shiftInfo.scheduledStart).toTimeString().slice(0, 5) : ''}
+                                    onChange={(e) => {
+                                      const oldDate = new Date(editingTimestamp.checkInTime).toISOString().split('T')[0];
+                                      const newTime = e.target.value;
+                                      const newDateTime = newTime ? new Date(`${oldDate}T${newTime}`) : null;
+                                      
+                                      setEditingTimestamp({
+                                        ...editingTimestamp,
+                                        shiftInfo: {
+                                          ...editingTimestamp.shiftInfo || {},
+                                          scheduledStart: newDateTime ? newDateTime.toISOString() : null
+                                        }
+                                      });
+                                    }}
+                                    placeholder="Start"
+                                    className="px-2 py-1 border rounded w-full text-xs"
+                                  />
+                                  <input
+                                    type="time"
+                                    value={editingTimestamp.shiftInfo?.scheduledEnd ? new Date(editingTimestamp.shiftInfo.scheduledEnd).toTimeString().slice(0, 5) : ''}
+                                    onChange={(e) => {
+                                      const oldDate = new Date(editingTimestamp.checkInTime).toISOString().split('T')[0];
+                                      const newTime = e.target.value;
+                                      const newDateTime = newTime ? new Date(`${oldDate}T${newTime}`) : null;
+                                      
+                                      setEditingTimestamp({
+                                        ...editingTimestamp,
+                                        shiftInfo: {
+                                          ...editingTimestamp.shiftInfo || {},
+                                          scheduledEnd: newDateTime ? newDateTime.toISOString() : null
+                                        }
+                                      });
+                                    }}
+                                    placeholder="Slut"
+                                    className="px-2 py-1 border rounded w-full text-xs"
+                                  />
+                                </div>
+                              </td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                                 {editingTimestamp.checkOutTime 
                                   ? utils.timestampToHours(
@@ -2033,6 +2202,17 @@ const AdminPanel = ({ onLogout }) => {
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm">
                                 {ts.shiftInfo?.breakDuration || '0'}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm">
+                                {ts.shiftInfo?.scheduledStart && ts.shiftInfo?.scheduledEnd ? (
+                                  <>
+                                    {new Date(ts.shiftInfo.scheduledStart).toLocaleTimeString('sv-SE', {hour: '2-digit', minute: '2-digit'})}
+                                    {' - '}
+                                    {new Date(ts.shiftInfo.scheduledEnd).toLocaleTimeString('sv-SE', {hour: '2-digit', minute: '2-digit'})}
+                                  </>
+                                ) : (
+                                  <span className="text-gray-400">Ej angivet</span>
+                                )}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap text-sm">
                                 {ts.checkOutTime 
