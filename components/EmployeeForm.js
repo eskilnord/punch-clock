@@ -142,7 +142,8 @@ const EmployeeForm = ({ onLogout }) => {
               id: employee.personnummer,
               name: employee.name || `Person ${Math.floor(Math.random() * 10000)}`,
               status: status,
-              timestamp: latestTimestamp?.checkInTime || null
+              timestamp: latestTimestamp?.checkInTime || null,
+              notApproved: employee.approved === false // Lägg till godkännandestatus
             };
           } catch (error) {
             console.error("Error fetching status for employee:", error);
@@ -150,7 +151,8 @@ const EmployeeForm = ({ onLogout }) => {
               id: employee.personnummer,
               name: employee.name || `Person ${Math.floor(Math.random() * 10000)}`,
               status: 'error',
-              timestamp: null
+              timestamp: null,
+              notApproved: employee.approved === false // Lägg till godkännandestatus
             };
           }
         })
@@ -393,6 +395,8 @@ const EmployeeForm = ({ onLogout }) => {
       
       if (!isMountedRef.current) return;
       
+      let isNewEmployee = false;
+      
       if (!employee) {
         // Register new employee if not exists
         await dbService.saveEmployee({
@@ -404,18 +408,18 @@ const EmployeeForm = ({ onLogout }) => {
         if (!isMountedRef.current) return;
         
         setIsRegistered(true);
-        setSuccess('Du har registrerats som ny medarbetare. Inväntar godkännande från administratör.');
-        setLoading(false);
-        return;
+        isNewEmployee = true;
+        console.log("Registrerad ny medarbetare:", pnr);
       }
       
-      if (employee.approved === false) {
-        setSuccess('Ditt konto väntar på godkännande. Kontakta administratör.');
-        setLoading(false);
-        return;
+      // Om det är en icke-godkänd medarbetare visar vi ett meddelande 
+      // men tillåter stämpling ändå
+      if (employee && employee.approved === false) {
+        console.log("Icke-godkänd medarbetare stämplar:", pnr);
+        setSuccess('Ditt konto väntar på godkännande från administratör, men du kan fortsätta stämpla in och ut.');
       }
       
-      // Check if employee is already checked in - använd getLatestTimestampByPersonnummer istället
+      // Check if employee is already checked in
       const timestamp = await dbService.getLatestTimestampByPersonnummer(pnr);
       let extraData = null;
       
@@ -451,7 +455,9 @@ const EmployeeForm = ({ onLogout }) => {
         
         setIsCheckedIn(false);
         setStatusMessage('');
-        setSuccess('Utstämpling registrerad');
+        setSuccess(isNewEmployee ? 
+          'Du har registrerats som ny medarbetare och din utstämpling har registrerats.' : 
+          'Utstämpling registrerad');
         
         // Uppdatera närvarolistan
         loadEmployeeStatus();
@@ -471,7 +477,9 @@ const EmployeeForm = ({ onLogout }) => {
           minute: '2-digit' 
         });
         setStatusMessage(`Instämplad ${timeString}`);
-        setSuccess('Instämpling registrerad');
+        setSuccess(isNewEmployee ? 
+          'Du har registrerats som ny medarbetare och din instämpling har registrerats.' : 
+          'Instämpling registrerad');
         
         // Uppdatera närvarolistan
         loadEmployeeStatus();
@@ -689,7 +697,14 @@ const EmployeeForm = ({ onLogout }) => {
               {employeeList.map((employee) => (
                 <tr key={employee.id}>
                   <td className="py-3 px-3 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{employee.name}</div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {employee.name}
+                      {employee.notApproved && 
+                        <span className="inline-block ml-2 px-2 text-xs leading-4 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                          Ej godkänd
+                        </span>
+                      }
+                    </div>
                   </td>
                   <td className="py-3 px-3 whitespace-nowrap">
                     {employee.status === 'in' && (

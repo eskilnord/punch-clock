@@ -17,6 +17,9 @@ const utils = {
     // Remove all spaces
     let pnr = personnummer.trim().replace(/\s+/g, '');
     
+    // Om det är ett samordningsnummer eller utländskt personnummer
+    // kan vi tillåta specialformat, men vi behåller grundreglerna
+    
     // If it already contains a hyphen, we'll check if it's in the right format
     if (pnr.includes('-')) {
       const parts = pnr.split('-');
@@ -27,35 +30,56 @@ const utils = {
       let firstPart = parts[0];
       const secondPart = parts[1];
       
-      // If first part is 6 digits (YYMMDD)
-      if (firstPart.length === 6) {
-        // Convert to YYYYMMDD by determining the century
-        const yy = parseInt(firstPart.substring(0, 2), 10);
-        const currentYear = new Date().getFullYear();
-        const century = yy > (currentYear % 100) ? '19' : '20';
-        firstPart = century + firstPart;
-      } else if (firstPart.length !== 8) {
-        throw new Error('Ogiltigt personnummer format');
+      // Om vi har ett utländskt format där första delen kan innehålla bokstäver
+      const isNonNumericFirst = /[^0-9]/.test(firstPart);
+      
+      if (!isNonNumericFirst) {
+        // Traditionellt personnummer format
+        // If first part is 6 digits (YYMMDD)
+        if (firstPart.length === 6) {
+          // Convert to YYYYMMDD by determining the century
+          const yy = parseInt(firstPart.substring(0, 2), 10);
+          const currentYear = new Date().getFullYear();
+          const century = yy > (currentYear % 100) ? '19' : '20';
+          firstPart = century + firstPart;
+        } else if (firstPart.length !== 8) {
+          throw new Error('Ogiltigt personnummer format');
+        }
+      } else {
+        // Utländskt format - behåll som det är
+        // För utländska format accepterar vi alla första delar
       }
       
-      // Ensure second part is 4 digits
-      if (secondPart.length !== 4) {
-        throw new Error('Ogiltigt personnummer format');
+      // För den andra delen accepterar vi:
+      // 1. 4 siffror (standard)
+      // 2. Alfanumeriska kombinationer för utländska IDs (t.ex. "A123")
+      
+      // Tillåt mer flexibla andra delar för utländska personnummer
+      // men se till att den innehåller minst en bokstav eller siffra
+      if (secondPart.length === 0 || secondPart.length > 6) {
+        throw new Error('Ogiltigt format på andra delen av numret');
       }
       
       return `${firstPart}-${secondPart}`;
     } 
     
     // No hyphen in the input
-    if (pnr.length === 10) {
+    if (pnr.length === 10 && /^\d+$/.test(pnr)) {
       // Assuming YYMMDDXXXX format, convert to YYYYMMDD-XXXX
       const yy = parseInt(pnr.substring(0, 2), 10);
       const currentYear = new Date().getFullYear();
       const century = yy > (currentYear % 100) ? '19' : '20';
       return `${century}${pnr.substring(0, 6)}-${pnr.substring(6, 10)}`;
-    } else if (pnr.length === 12) {
+    } else if (pnr.length === 12 && /^\d+$/.test(pnr)) {
       // Assuming YYYYMMDDXXXX format, convert to YYYYMMDD-XXXX
       return `${pnr.substring(0, 8)}-${pnr.substring(8, 12)}`;
+    } else {
+      // För utländska personnummer utan bindestreck
+      // Om det är alfanumeriskt och minst 6 tecken, gör ett försök att dela upp det
+      if (pnr.length >= 6) {
+        // För enkelhets skull delar vi det vid position 6 om det är alfanumeriskt
+        return `${pnr.substring(0, 6)}-${pnr.substring(6)}`;
+      }
     }
     
     throw new Error('Ogiltigt personnummer format');
@@ -64,8 +88,30 @@ const utils = {
   // Validate personnummer
   validatePersonnummer: (personnummer) => {
     try {
+      // För utländska och samordningsnummer gör vi en enklare validering
+      const trimmed = personnummer.trim();
+      if (trimmed.length < 6) {
+        return false; // Minst 6 tecken krävs för ett giltigt ID
+      }
+      
       utils.normalizePersonnummer(personnummer);
       return true;
+    } catch (error) {
+      return false;
+    }
+  },
+  
+  // Detect if an ID is a coordination number (samordningsnummer)
+  isSamordningsnummer: (personnummer) => {
+    try {
+      const normalized = utils.normalizePersonnummer(personnummer);
+      const datePart = normalized.split('-')[0];
+      
+      if (datePart.length !== 8) return false;
+      
+      // I samordningsnummer läggs 60 till på dagen
+      const day = parseInt(datePart.substring(6, 8), 10);
+      return day > 60 && day <= 91;
     } catch (error) {
       return false;
     }
