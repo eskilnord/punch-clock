@@ -92,6 +92,24 @@ const dbService = {
     });
   },
   
+  // Save PIN (hash)
+  savePin: async (pin) => {
+    try {
+      // Check if CryptoJS is available
+      if (typeof CryptoJS !== 'undefined') {
+        // Hash the PIN for security
+        const hashedPin = CryptoJS.SHA256(pin).toString();
+        return await dbService.saveConfig('pinHash', hashedPin);
+      } else {
+        console.warn('CryptoJS not available, storing PIN without hashing (not recommended)');
+        return await dbService.saveConfig('pinHash', pin);
+      }
+    } catch (err) {
+      console.error('Error saving PIN:', err);
+      throw err;
+    }
+  },
+  
   // Save an employee
   saveEmployee: async (employee) => {
     const db = await initDB();
@@ -290,6 +308,11 @@ const dbService = {
     });
   },
   
+  // Get latest timestamp by personnummer (for backward compatibility)
+  getLatestTimestampByPersonnummer: async (personnummer) => {
+    return dbService.getLatestTimestamp(personnummer);
+  },
+  
   // Get admin pin
   verifyPin: async (pin) => {
     const db = await initDB();
@@ -298,12 +321,26 @@ const dbService = {
       const transaction = db.transaction(['config'], 'readonly');
       const store = transaction.objectStore('config');
       
-      const request = store.get('adminPin');
+      const request = store.get('pinHash');
       
       request.onsuccess = event => {
         const result = event.target.result;
-        // Compare just the values, not the whole stored object
-        resolve(result && result.value === pin);
+        
+        if (!result) {
+          resolve(false);
+          return;
+        }
+        
+        // Check if CryptoJS is available
+        if (typeof CryptoJS !== 'undefined') {
+          // Hash the input PIN to compare with stored hash
+          const hashedPin = CryptoJS.SHA256(pin).toString();
+          resolve(result.value === hashedPin);
+        } else {
+          // Fallback if CryptoJS is not available (not recommended)
+          console.warn('CryptoJS not available, comparing PINs without hashing (not secure)');
+          resolve(result.value === pin);
+        }
       };
       
       request.onerror = event => {
