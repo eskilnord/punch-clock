@@ -163,6 +163,70 @@ const utils = {
     return filename;
   },
   
+  // Skapa PDF-rapport
+  createPDF: (title, data, columns, filename) => {
+    try {
+      // Skapa ny PDF med jsPDF
+      const doc = new jspdf.jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      // Lägg till rubrik och datum
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text(title, 14, 20);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text(`Genererad: ${new Date().toLocaleDateString('sv-SE')} ${new Date().toLocaleTimeString('sv-SE')}`, 14, 27);
+      
+      // Använd autoTable-plugin för att skapa tabellen
+      doc.autoTable({
+        startY: 35,
+        head: [columns.map(col => col.header)],
+        body: data.map(row => 
+          columns.map(col => {
+            const value = row[col.dataKey];
+            // Hantera specialfall för formatering
+            if (col.dataKey === 'Schema' && row.SchemaStart && row.SchemaSlut) {
+              return `${row.SchemaStart} - ${row.SchemaSlut}${row.SchemaPaus ? '\nRast: ' + row.SchemaPaus + ' min' : ''}`;
+            }
+            return value !== undefined ? value : '';
+          })
+        ),
+        columnStyles: {
+          // Olika bredder för olika kolumner
+          0: { cellWidth: 25 }, // Datum
+          1: { cellWidth: 35 }, // Medarbetare
+          2: { cellWidth: 30 }, // Personnummer
+        },
+        styles: {
+          font: 'helvetica',
+          fontSize: 9,
+          cellPadding: 3,
+          overflow: 'linebreak'
+        },
+        headStyles: {
+          fillColor: [66, 135, 245],
+          textColor: 255,
+          fontStyle: 'bold'
+        },
+        margin: { top: 35 },
+        theme: 'striped'
+      });
+      
+      // Spara PDF
+      doc.save(filename);
+      return filename;
+      
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      throw err;
+    }
+  },
+  
   // Generate attendance report
   generateAttendanceReport: async () => {
     const timestamps = await dbService.getAllTimestamps();
@@ -176,6 +240,11 @@ const utils = {
     
     // Transform timestamps for report
     const reportData = timestamps.map(ts => {
+      // Extrahera schema information
+      const schemaStart = ts.shiftInfo?.startTime || null;
+      const schemaSlut = ts.shiftInfo?.endTime || null;
+      const schemaPaus = ts.shiftInfo?.breakDuration || null;
+      
       return {
         Datum: new Date(ts.checkInTime).toLocaleDateString('sv-SE'),
         Medarbetare: employeeMap[ts.personnummer] || ts.personnummer,
@@ -184,6 +253,10 @@ const utils = {
         Utstämpling: ts.checkOutTime ? new Date(ts.checkOutTime).toLocaleTimeString('sv-SE') : 'Pågående',
         Arbetstid: ts.checkOutTime ? utils.timestampToHours(ts.checkInTime, ts.checkOutTime, 
           ts.shiftInfo?.breakDuration || 0) + ' h' : 'Pågående',
+        Schema: (schemaStart && schemaSlut) ? `${schemaStart} - ${schemaSlut}` : '-',
+        SchemaStart: schemaStart,
+        SchemaSlut: schemaSlut,
+        SchemaPaus: schemaPaus,
         Anteckningar: ts.shiftInfo?.notes || ''
       };
     });
@@ -195,13 +268,22 @@ const utils = {
       return a.Medarbetare.localeCompare(b.Medarbetare);
     });
     
-    const headers = ['Datum', 'Medarbetare', 'Personnummer', 'Instämpling', 'Utstämpling', 'Arbetstid', 'Anteckningar'];
-    const csv = utils.generateCSV(reportData, headers);
+    // Definiera kolumner för PDF-rapporten
+    const columns = [
+      { header: 'Datum', dataKey: 'Datum' },
+      { header: 'Medarbetare', dataKey: 'Medarbetare' },
+      { header: 'Personnummer', dataKey: 'Personnummer' },
+      { header: 'Instämpling', dataKey: 'Instämpling' },
+      { header: 'Utstämpling', dataKey: 'Utstämpling' },
+      { header: 'Arbetstid', dataKey: 'Arbetstid' },
+      { header: 'Schema', dataKey: 'Schema' },
+      { header: 'Anteckningar', dataKey: 'Anteckningar' }
+    ];
     
     const dateStr = new Date().toISOString().split('T')[0];
-    const filename = `närvarorapport_${dateStr}.csv`;
+    const filename = `närvarorapport_${dateStr}.pdf`;
     
-    return utils.downloadFile(csv, filename);
+    return utils.createPDF('Närvarorapport', reportData, columns, filename);
   },
   
   // Generate work hours summary
@@ -231,30 +313,91 @@ const utils = {
           Personnummer: employeeId,
           Medarbetare: employeeMap[employeeId] || employeeId,
           TotalTimmar: 0,
-          AntalPass: 0
+          AntalPass: 0,
+          SchemaTimmar: 0, // Lägg till de schemalagda timmarna
+          Arbetspass: [] // Spara information om varje arbetspass
         };
       }
       
       if (ts.checkOutTime) {
-        employeeSummary[employeeId].TotalTimmar += utils.timestampToHours(
+        const actualHours = utils.timestampToHours(
           ts.checkInTime, ts.checkOutTime, ts.shiftInfo?.breakDuration || 0
         );
+        
+        employeeSummary[employeeId].TotalTimmar += actualHours;
         employeeSummary[employeeId].AntalPass += 1;
+        
+        // Beräkna schemalagda timmar om schema finns
+        if (ts.shiftInfo && ts.shiftInfo.startTime && ts.shiftInfo.endTime) {
+          const startParts = ts.shiftInfo.startTime.split(':');
+          const endParts = ts.shiftInfo.endTime.split(':');
+          
+          if (startParts.length === 2 && endParts.length === 2) {
+            const startHour = parseInt(startParts[0]);
+            const startMinute = parseInt(startParts[1]);
+            const endHour = parseInt(endParts[0]);
+            const endMinute = parseInt(endParts[1]);
+            
+            let scheduledMinutes = ((endHour * 60 + endMinute) - (startHour * 60 + startMinute));
+            // Hantera fall där sluttid är tidigare än starttid (t.ex. nattpass)
+            if (scheduledMinutes < 0) {
+              scheduledMinutes += 24 * 60; // Lägg till 24 timmar
+            }
+            
+            // Dra bort schemalagd rast
+            const breakMinutes = parseInt(ts.shiftInfo.breakDuration || 0);
+            const scheduledHours = (scheduledMinutes - breakMinutes) / 60;
+            
+            employeeSummary[employeeId].SchemaTimmar += scheduledHours;
+            
+            // Spara detaljerad information om passet
+            employeeSummary[employeeId].Arbetspass.push({
+              Datum: new Date(ts.checkInTime).toLocaleDateString('sv-SE'),
+              Instämpling: new Date(ts.checkInTime).toLocaleTimeString('sv-SE'),
+              Utstämpling: new Date(ts.checkOutTime).toLocaleTimeString('sv-SE'),
+              Schema: `${ts.shiftInfo.startTime} - ${ts.shiftInfo.endTime}`,
+              Rast: `${ts.shiftInfo.breakDuration} min`,
+              FaktiskTid: `${actualHours.toFixed(2)} h`,
+              SchemalagdTid: `${scheduledHours.toFixed(2)} h`,
+              Avvikelse: `${(actualHours - scheduledHours).toFixed(2)} h`
+            });
+          }
+        }
       }
     });
     
-    // Convert to array for CSV
+    // Convert to array for PDF
     const reportData = Object.values(employeeSummary);
     
     // Sort by total hours
     reportData.sort((a, b) => b.TotalTimmar - a.TotalTimmar);
     
-    const headers = ['Medarbetare', 'Personnummer', 'TotalTimmar', 'AntalPass'];
-    const csv = utils.generateCSV(reportData, headers);
+    // Formatera data för PDF
+    const pdfData = reportData.map(emp => {
+      return {
+        Medarbetare: emp.Medarbetare,
+        Personnummer: emp.Personnummer,
+        TotalTimmar: emp.TotalTimmar.toFixed(2) + ' h',
+        SchemaTimmar: emp.SchemaTimmar.toFixed(2) + ' h',
+        Avvikelse: (emp.TotalTimmar - emp.SchemaTimmar).toFixed(2) + ' h',
+        AntalPass: emp.AntalPass
+      };
+    });
     
-    const filename = `arbetstidssammanställning_${startDate}_till_${endDate}.csv`;
+    // Definiera kolumner för PDF
+    const columns = [
+      { header: 'Medarbetare', dataKey: 'Medarbetare' },
+      { header: 'Personnummer', dataKey: 'Personnummer' },
+      { header: 'Arbetad tid', dataKey: 'TotalTimmar' },
+      { header: 'Schemalagd tid', dataKey: 'SchemaTimmar' },
+      { header: 'Avvikelse', dataKey: 'Avvikelse' },
+      { header: 'Arbetspass', dataKey: 'AntalPass' }
+    ];
     
-    return utils.downloadFile(csv, filename);
+    const filename = `arbetstidssammanställning_${startDate}_till_${endDate}.pdf`;
+    
+    const title = `Arbetstidssammanställning ${startDate} - ${endDate}`;
+    return utils.createPDF(title, pdfData, columns, filename);
   }
 };
 
