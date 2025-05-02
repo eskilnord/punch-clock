@@ -1,0 +1,245 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+- This is the project description with how the project should be built and how it should work. In essence it should be built as simple as possible. It follows in Swedish.
+
+Kravspecifikation för en enkel webbaserad stämpelklocka
+
+1. Översikt
+
+Syftet med tjänsten är att tillhandahålla en enkel, gratis och lokal stämpelklocka som körs i webbläsaren utan krav på inloggning eller serverbaserad lagring. Tjänsten ska ha ett modernt och användarvänligt gränssnitt, vara driftsäker och enkel att implementera. Chefen ska kunna konfigurera systemet med en PIN-kod och generera rapporter, medan medarbetare använder sitt personnummer för att stämpla in och ut.
+
+2. Funktionella krav
+
+2.1 Allmänt
+
+
+Lokal lagring: All data (konfiguration, stämpeltider, medarbetaruppgifter) ska lagras lokalt i webbläsaren med localStorage eller IndexedDB för att säkerställa att ingen data skickas till en server.
+
+
+Ingen inloggning: Tjänsten ska inte kräva användarkonton eller autentisering utöver PIN-koden för chefsgränssnittet.
+
+
+Plattform: Tjänsten ska vara en responsiv webbapplikation som fungerar på både desktop och mobila enheter (iOS, Android) i moderna webbläsare (Chrome, Firefox, Safari, Edge).
+
+
+Språk: Gränssnittet ska vara på svenska med möjlighet att enkelt byta till andra språk i framtiden (använd i18n-struktur).
+
+2.2 Chefsgränssnitt
+
+Initial konfiguration:
+
+Vid första användning ska chefen ange en 4–6-siffrig PIN-kod som sparas lokalt (hashad med exempelvis SHA-256 för säkerhet).
+
+PIN-koden används för att låsa upp chefsgränssnittet.
+
+Funktioner i chefsgränssnittet:
+
+Hantera medarbetare: Möjlighet att lägga till, ta bort eller redigera medarbetare (baserat på personnummer).
+
+Närvarorapport: En knapp för att generera och ladda ner en PDF-rapport som listar alla stämpeltider per medarbetare (datum, tid för in/ut, total arbetstid per dag).
+
+
+Sammanställning av arbetade timmar: En knapp för att generera och ladda ner en PDF-rapport som summerar totala arbetade timmar per medarbetare över en valbar tidsperiod (t.ex. vecka, månad).
+
+
+Rensa data: Möjlighet att rensa all lagrad data (efter bekräftelse och PIN-verifiering).
+
+
+Säkerhet:
+
+
+Chefsgränssnittet ska vara låst bakom PIN-koden.
+
+Om fel PIN-kod anges 5 gånger i rad, låses gränssnittet i 5 minuter.
+
+2.3 Medarbetargränssnitt
+
+Inmatning:
+
+Medarbetaren anger sitt personnummer (format: ÅÅÅÅMMDD-XXXX) i ett formulär.
+
+
+Validering av personnummer ska göras för att säkerställa korrekt format.
+
+Stämpling:
+
+Efter att personnumret validerats visas en knapp för att stämpla in eller stämpla ut beroende på aktuell status.
+
+Vid stämpling sparas tidpunkt (datum och tid) och personnummer lokalt.
+
+En visuell bekräftelse (t.ex. "Du är nu instämplad") visas efter varje stämpling.
+
+Feedback:
+
+Om medarbetaren inte är registrerad (dvs. personnumret finns inte i databasen), visas ett felmeddelande: "Kontakta din chef för att registreras."
+
+2.4 Rapporter
+
+Närvarorapport (PDF):
+
+Innehåller en tabell med kolumner: Medarbetare (personnummer), datum, instämplingstid, utstämplingstid, total arbetstid.
+
+Filnamn: Narvaro_[datum].pdf.
+
+Sammanställning av arbetade timmar (PDF):
+
+
+Innehåller en tabell med kolumner: Medarbetare (personnummer), total arbetstid (timmar och minuter) för vald period.
+
+Filnamn: Arbetstimmar_[startdatum]_[slutdatum].pdf.
+
+Generering:
+
+Använd en JavaScript-baserad PDF-generator (t.ex. jsPDF) för att skapa rapporterna lokalt.
+
+Rapporterna ska ha ett professionellt utseende
+
+3. Icke-funktionella krav
+
+3.1 Användargränssnitt
+
+Design:
+
+Modernt och minimalistiskt gränssnitt med tydlig typografi och kontrastrika färger (t.ex. Tailwind CSS för snabb och konsekvent styling).
+
+Responsiv design som fungerar på skärmar från 320px och uppåt.
+
+Använd en färgpalett med hög läsbarhet (t.ex. vit bakgrund, mörk text, accentfärger för knappar).
+
+Användarupplevelse:
+
+Snabba laddningstider (inga externa resurser förutom CDN för bibliotek som Tailwind CSS och jsPDF).
+
+Tydliga felmeddelanden och instruktioner.
+
+Animeringar för knappar och övergångar för en polerad känsla (t.ex. hover-effekter, subtil fade-in vid sidladdning).
+
+3.2 Prestanda
+
+Lokal lagring:
+
+Använd IndexedDB för att hantera stora mängder stämpeldata effektivt.
+
+Implementera en enkel databasstruktur med tabeller för medarbetare, stämpeltider och konfiguration.
+
+
+Skalbarhet:
+
+Systemet ska hantera upp till 100 medarbetare och tusentals stämpeltider utan prestandaförlust.
+
+Driftsäkerhet:
+
+Säkerställ att data inte går förlorad vid webbläsaruppdateringar genom att använda stabila API:er (IndexedDB istället för localStorage för större datamängder).
+
+Implementera backup-funktion i chefsgränssnittet för att exportera rådata som JSON-fil.
+
+3.3 Säkerhet
+
+Dataskydd:
+
+PIN-koden ska hash-as innan lagring för att förhindra att den exponeras.
+
+Dataintegritet:
+
+Kontrollera att stämpeltider inte kan manipuleras genom att använda tidsstämplar från Date.now() och validera sekvensen (t.ex. ingen utstämpling utan föregående instämpling).
+
+4. Tekniska krav
+
+4.1 Teknikstack
+
+Frontend:
+
+HTML5, CSS3 (Tailwind CSS via CDN).
+
+JavaScript (ES6+) med React för komponentbaserad utveckling.
+
+JSX för att bygga gränssnittet.
+
+Bibliotek:
+
+jsPDF för PDF-generering.
+
+idb (IndexedDB-wrapper) för enkel databashantering.
+
+React och ReactDOM via CDN (t.ex. cdn.jsdelivr.net).
+
+Databas:
+
+IndexedDB för lokal lagring av:
+
+Medarbetare: { personnummer, namn (valfritt) }.
+
+Stämpeltider: { personnummer, instämpling, utstämpling, datum }.
+
+Konfiguration: { pinHash, företagetsNamn }.
+
+4.2 Struktur
+
+Filer:
+
+index.html: Huvudfil med grundstruktur och CDN-länkar.
+
+App.jsx: React-komponent som hanterar hela applikationen.
+
+components/: Separata komponenter för medarbetargränssnitt, chefsgränssnitt, formulär, etc.
+
+Dataflöde:
+
+React Context eller Zustand för tillståndshantering (t.ex. aktuell användare, PIN-status).
+
+Asynkrona funktioner för att hämta/skriva till IndexedDB.
+
+5. Användarflöden
+
+5.1 Första gången (chef)
+
+Chefen öppnar webbappen.
+
+Om ingen PIN-kod är satt, visas ett formulär för att ange PIN-kod och (valfritt) företagsnamn.
+
+Efter konfiguration sparas PIN-koden (hashad) och chefsgränssnittet blir tillgängligt.
+
+5.2 Medarbetare stämplar
+
+Medarbetaren anger personnummer i formuläret.
+
+Om personnumret är registrerat, visas en knapp för att stämpla in/ut.
+
+Vid stämpling sparas tidpunkten och en bekräftelse visas.
+
+5.3 Chef genererar rapport
+
+Chefen anger PIN-koden för att låsa upp chefsgränssnittet.
+
+Väljer att generera närvarorapport eller sammanställning.
+
+Väljer tidsperiod (om tillämpligt) och laddar ner PDF-filen.
+
+6. Framtida förbättringar
+
+Möjlighet att importera medarbetarlista via JSON.
+
+Stöd för flera språk med i18n.
+
+Visuell dashboard i chefsgränssnittet för att visa realtidsstatistik.
+
+7. Testkrav
+
+Enhetstester:
+Validering av personnummerformat.
+Hashning och verifiering av PIN-kod.
+Generering av korrekta PDF-rapporter.
+
+Integrationstester:
+
+Stämpling in/ut och lagring i IndexedDB.
+
+
+Låsning av chefsgränssnitt vid fel PIN-kod.
+Användartester:
+Testa gränssnittet på olika enheter (mobil, desktop).
+Verifiera att rapporterna är läsbara och korrekta.

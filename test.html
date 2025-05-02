@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>React Test</title>
+  <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    function App() {
+      const [count, setCount] = React.useState(0);
+      
+      return (
+        <div>
+          <h1>Hello React</h1>
+          <p>Count: {count}</p>
+          <button onClick={() => setCount(count + 1)}>
+            Increment
+          </button>
+        </div>
+      );
+    }
+
+    // Use the older ReactDOM.render method
+    ReactDOM.render(<App />, document.getElementById('root'));
+    console.log("App rendered");
+  </script>
+</body>
+</html> 
